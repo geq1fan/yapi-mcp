@@ -9,7 +9,7 @@ import pytest
 
 
 @pytest.mark.skip(reason="MCP tools not implemented yet - TDD placeholder")
-def test_yapi_search_interfaces_contract():
+def test_yapi_search_interfaces_contract() -> None:
     """Test yapi_search_interfaces tool matches SearchInterfacesTool schema.
 
     Contract requirements:
@@ -32,7 +32,7 @@ def test_yapi_search_interfaces_contract():
 
 
 @pytest.mark.skip(reason="MCP tools not implemented yet - TDD placeholder")
-def test_yapi_get_interface_contract():
+def test_yapi_get_interface_contract() -> None:
     """Test yapi_get_interface tool matches GetInterfaceTool schema.
 
     Contract requirements:
@@ -53,7 +53,7 @@ def test_yapi_get_interface_contract():
 
 
 @pytest.mark.skip(reason="MCP tools not implemented yet - TDD placeholder")
-def test_yapi_create_interface_contract():
+def test_yapi_create_interface_contract() -> None:
     """Test yapi_create_interface tool matches CreateInterfaceTool schema.
 
     Contract requirements:
@@ -83,7 +83,7 @@ def test_yapi_create_interface_contract():
 
 
 @pytest.mark.skip(reason="MCP tools not implemented yet - TDD placeholder")
-def test_yapi_update_interface_contract():
+def test_yapi_update_interface_contract() -> None:
     """Test yapi_update_interface tool matches UpdateInterfaceTool schema.
 
     Contract requirements:
@@ -113,7 +113,7 @@ def test_yapi_update_interface_contract():
 
 
 @pytest.mark.skip(reason="MCP tools not implemented yet - TDD placeholder")
-def test_all_four_tools_registered():
+def test_all_four_tools_registered() -> None:
     """Test that exactly 4 MCP tools are registered.
 
     Contract requirement:

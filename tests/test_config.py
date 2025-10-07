@@ -6,26 +6,26 @@ from pydantic import ValidationError
 from src.config import ServerConfig
 
 
-def test_server_config_valid():
+def test_server_config_valid() -> None:
     """Test ServerConfig with valid inputs."""
     config = ServerConfig(
         yapi_server_url="https://yapi.example.com",
-        yapi_token="dummy-token",
+        yapi_token="dummy-token",  # noqa: S106
         yapi_uid="dummy-uid",
         yapi_cas="dummy-cas",
     )
 
     assert str(config.yapi_server_url) == "https://yapi.example.com/"
-    assert config.yapi_token == "dummy-token"
+    assert config.yapi_token == "dummy-token"  # noqa: S105
     assert config.yapi_uid == "dummy-uid"
     assert config.yapi_cas == "dummy-cas"
 
 
-def test_server_config_cookies_property():
+def test_server_config_cookies_property() -> None:
     """Test cookies property returns correct dictionary."""
     config = ServerConfig(
         yapi_server_url="https://yapi.example.com",
-        yapi_token="dummy-token",
+        yapi_token="dummy-token",  # noqa: S106
         yapi_uid="dummy-uid",
         yapi_cas="dummy-cas",
     )
@@ -38,7 +38,7 @@ def test_server_config_cookies_property():
     }
 
 
-def test_server_config_missing_required_field():
+def test_server_config_missing_required_field() -> None:
     """Test ServerConfig raises ValidationError when required field is missing."""
     with pytest.raises(ValidationError) as exc_info:
         ServerConfig(
@@ -51,7 +51,7 @@ def test_server_config_missing_required_field():
     assert any(error["loc"] == ("yapi_token",) for error in errors)
 
 
-def test_server_config_empty_token():
+def test_server_config_empty_token() -> None:
     """Test ServerConfig rejects empty token string."""
     with pytest.raises(ValidationError) as exc_info:
         ServerConfig(
@@ -67,12 +67,12 @@ def test_server_config_empty_token():
     )
 
 
-def test_server_config_invalid_url():
+def test_server_config_invalid_url() -> None:
     """Test ServerConfig rejects invalid URL format."""
     with pytest.raises(ValidationError) as exc_info:
         ServerConfig(
             yapi_server_url="not-a-valid-url",
-            yapi_token="dummy-token",
+            yapi_token="dummy-token",  # noqa: S106
             yapi_uid="dummy-uid",
         )
 
@@ -80,11 +80,11 @@ def test_server_config_invalid_url():
     assert any(error["loc"] == ("yapi_server_url",) for error in errors)
 
 
-def test_server_config_http_url_allowed():
+def test_server_config_http_url_allowed() -> None:
     """Test ServerConfig accepts HTTP URLs (not just HTTPS)."""
     config = ServerConfig(
         yapi_server_url="http://localhost:3000",
-        yapi_token="dummy-token",
+        yapi_token="dummy-token",  # noqa: S106
         yapi_uid="dummy-uid",
         yapi_cas="dummy-cas",
     )
@@ -92,25 +92,25 @@ def test_server_config_http_url_allowed():
     assert str(config.yapi_server_url) == "http://localhost:3000/"
 
 
-def test_server_config_yapi_cas_optional():
+def test_server_config_yapi_cas_optional() -> None:
     """Test yapi_cas is optional and defaults to None."""
     config = ServerConfig(
         yapi_server_url="https://yapi.example.com",
-        yapi_token="dummy-token",
+        yapi_token="dummy-token",  # noqa: S106
         yapi_uid="dummy-uid",
         # yapi_cas not provided
     )
 
     assert config.yapi_cas is None
-    assert config.yapi_token == "dummy-token"
+    assert config.yapi_token == "dummy-token"  # noqa: S105
     assert config.yapi_uid == "dummy-uid"
 
 
-def test_server_config_cookies_without_cas():
+def test_server_config_cookies_without_cas() -> None:
     """Test cookies property excludes ZYBIPSCAS when yapi_cas is not provided."""
     config = ServerConfig(
         yapi_server_url="https://yapi.example.com",
-        yapi_token="dummy-token",
+        yapi_token="dummy-token",  # noqa: S106
         yapi_uid="dummy-uid",
         # yapi_cas not provided
     )

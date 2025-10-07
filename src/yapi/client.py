@@ -1,10 +1,19 @@
 """YApi API HTTP client implementation."""
 
-from typing import Any
+from typing import Any, NoReturn
 
 import httpx
 
 from .models import YApiErrorResponse, YApiInterface, YApiInterfaceSummary
+
+
+def _raise_yapi_api_error(response: httpx.Response, error: YApiErrorResponse) -> NoReturn:
+    message = f"YApi API error: {error.errmsg} (code: {error.errcode})"
+    raise httpx.HTTPStatusError(
+        message,
+        request=response.request,
+        response=response,
+    )
 
 
 class YApiClient:
@@ -57,11 +66,7 @@ class YApiClient:
                 error = YApiErrorResponse(**data)
                 # YApi returns errcode != 0 for business logic errors
                 # Treat these as HTTP-equivalent errors
-                raise httpx.HTTPStatusError(
-                    f"YApi API error: {error.errmsg} (code: {error.errcode})",
-                    request=response.request,
-                    response=response,
-                )
+                _raise_yapi_api_error(response, error)
         except (ValueError, KeyError):
             # Not a JSON response or doesn't have errcode - proceed normally
             pass

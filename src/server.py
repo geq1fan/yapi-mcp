@@ -1,14 +1,68 @@
 """YApi MCP Server - Main server module with fastmcp."""
 
 import json
+from functools import cache
 from typing import Annotated
 
 import httpx
 from fastmcp import FastMCP
 
-from config import ServerConfig
-from yapi.client import YApiClient
-from yapi.errors import map_http_error_to_mcp
+try:
+    from config import ServerConfig
+    from yapi.client import YApiClient
+    from yapi.errors import map_http_error_to_mcp
+except ModuleNotFoundError as exc:  # pragma: no cover - fallback for package imports
+    if exc.name not in {"config", "yapi", "yapi.client", "yapi.errors"}:
+        raise
+    from .config import ServerConfig
+    from .yapi.client import YApiClient
+    from .yapi.errors import map_http_error_to_mcp
+
+
+class MCPToolError(RuntimeError):
+    """Base exception for MCP tool failures."""
+
+
+class MCPHTTPError(MCPToolError):
+    """Exception raised when YApi returns an HTTP error."""
+
+
+class MCPValidationError(MCPToolError):
+    """Exception raised when tool input validation fails."""
+
+
+class InvalidInterfacePathError(ValueError):
+    """Raised when an interface path does not start with a slash."""
+
+    def __init__(self) -> None:
+        super().__init__("接口路径必须以 / 开头")
+
+
+def _http_error_to_tool_error(error: httpx.HTTPStatusError) -> MCPHTTPError:
+    mcp_error = map_http_error_to_mcp(error)
+    return MCPHTTPError(mcp_error.message)
+
+
+def _wrap_validation_error(error: ValueError) -> MCPValidationError:
+    message = f"参数验证失败: {error!s}"
+    return MCPValidationError(message)
+
+
+def _wrap_tool_error(prefix: str, error: Exception) -> MCPToolError:
+    message = f"{prefix}: {error!s}"
+    return MCPToolError(message)
+
+
+def _ensure_path_starts_with_slash(path: str) -> None:
+    if not path.startswith("/"):
+        raise InvalidInterfacePathError
+
+
+SEARCH_INTERFACES_ERROR = "搜索接口失败"
+GET_INTERFACE_ERROR = "获取接口失败"
+CREATE_INTERFACE_ERROR = "创建接口失败"
+UPDATE_INTERFACE_ERROR = "更新接口失败"
+
 
 # Initialize MCP server
 mcp = FastMCP(
@@ -17,11 +71,10 @@ mcp = FastMCP(
 )
 
 
+@cache
 def get_config() -> ServerConfig:
-    """Get or create ServerConfig instance (lazy loading)."""
-    if not hasattr(get_config, "_instance"):
-        get_config._instance = ServerConfig()
-    return get_config._instance
+    """Get or create ServerConfig instance (cached)."""
+    return ServerConfig()
 
 
 # Tool implementations will be added in subsequent tasks (T019-T022)
@@ -43,11 +96,13 @@ async def yapi_search_interfaces(
                 ensure_ascii=False,
                 indent=2,
             )
-    except httpx.HTTPStatusError as e:
-        mcp_error = map_http_error_to_mcp(e)
-        raise Exception(mcp_error.message) from e
-    except Exception as e:
-        raise Exception(f"搜索接口失败: {e!s}") from e
+    except MCPToolError:
+        raise
+    except httpx.HTTPStatusError as exc:
+        raise _http_error_to_tool_error(exc) from exc
+    except Exception as exc:
+        prefix = SEARCH_INTERFACES_ERROR
+        raise _wrap_tool_error(prefix, exc) from exc
 
 
 @mcp.tool()
@@ -64,11 +119,13 @@ async def yapi_get_interface(
                 ensure_ascii=False,
                 indent=2,
             )
-    except httpx.HTTPStatusError as e:
-        mcp_error = map_http_error_to_mcp(e)
-        raise Exception(mcp_error.message) from e
-    except Exception as e:
-        raise Exception(f"获取接口失败: {e!s}") from e
+    except MCPToolError:
+        raise
+    except httpx.HTTPStatusError as exc:
+        raise _http_error_to_tool_error(exc) from exc
+    except Exception as exc:
+        prefix = GET_INTERFACE_ERROR
+        raise _wrap_tool_error(prefix, exc) from exc
 
 
 @mcp.tool()
@@ -84,9 +141,7 @@ async def yapi_create_interface(
     """在 YApi 项目中创建新接口定义."""
     config = get_config()
     try:
-        # Validate path starts with /
-        if not path.startswith("/"):
-            raise ValueError("接口路径必须以 / 开头")
+        _ensure_path_starts_with_slash(path)
 
         async with YApiClient(str(config.yapi_server_url), config.cookies) as client:
             interface_id = await client.create_interface(
@@ -96,13 +151,15 @@ async def yapi_create_interface(
                 {"interface_id": interface_id},
                 ensure_ascii=False,
             )
-    except httpx.HTTPStatusError as e:
-        mcp_error = map_http_error_to_mcp(e)
-        raise Exception(mcp_error.message) from e
-    except ValueError as e:
-        raise Exception(f"参数验证失败: {e!s}") from e
-    except Exception as e:
-        raise Exception(f"创建接口失败: {e!s}") from e
+    except MCPToolError:
+        raise
+    except httpx.HTTPStatusError as exc:
+        raise _http_error_to_tool_error(exc) from exc
+    except ValueError as exc:
+        raise _wrap_validation_error(exc) from exc
+    except Exception as exc:
+        prefix = CREATE_INTERFACE_ERROR
+        raise _wrap_tool_error(prefix, exc) from exc
 
 
 @mcp.tool()
@@ -118,9 +175,8 @@ async def yapi_update_interface(
     """增量更新 YApi 接口定义(仅更新提供的字段)."""
     config = get_config()
     try:
-        # Validate path if provided
-        if path is not None and not path.startswith("/"):
-            raise ValueError("接口路径必须以 / 开头")
+        if path is not None:
+            _ensure_path_starts_with_slash(path)
 
         async with YApiClient(str(config.yapi_server_url), config.cookies) as client:
             success = await client.update_interface(
@@ -130,13 +186,15 @@ async def yapi_update_interface(
                 {"success": success, "message": "接口更新成功"},
                 ensure_ascii=False,
             )
-    except httpx.HTTPStatusError as e:
-        mcp_error = map_http_error_to_mcp(e)
-        raise Exception(mcp_error.message) from e
-    except ValueError as e:
-        raise Exception(f"参数验证失败: {e!s}") from e
-    except Exception as e:
-        raise Exception(f"更新接口失败: {e!s}") from e
+    except MCPToolError:
+        raise
+    except httpx.HTTPStatusError as exc:
+        raise _http_error_to_tool_error(exc) from exc
+    except ValueError as exc:
+        raise _wrap_validation_error(exc) from exc
+    except Exception as exc:
+        prefix = UPDATE_INTERFACE_ERROR
+        raise _wrap_tool_error(prefix, exc) from exc
 
 
 def main() -> None:
