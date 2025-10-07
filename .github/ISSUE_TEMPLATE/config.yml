@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 📖 文档
+    url: https://github.com/YOUR_USERNAME/yapi-mcp/blob/main/README.md
+    about: 查看项目文档和使用指南
+  - name: 💬 讨论区
+    url: https://github.com/YOUR_USERNAME/yapi-mcp/discussions
+    about: 提问、分享想法和与社区交流
