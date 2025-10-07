@@ -1,0 +1,78 @@
+name: 🐛 Bug 报告
+description: 报告一个问题或错误
+labels: ["bug", "需要分类"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢报告 bug！请填写以下信息以帮助我们更好地理解和解决问题。
+
+  - type: textarea
+    id: description
+    attributes:
+      label: 问题描述
+      description: 清晰简洁地描述遇到的问题
+      placeholder: 当我执行 X 时，发生了 Y，但我期望的是 Z
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 复现步骤
+      description: 如何复现此问题？
+      placeholder: |
+        1. 执行 '...'
+        2. 调用工具 '...'
+        3. 看到错误 '...'
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望行为
+      description: 你期望发生什么？
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际行为
+      description: 实际发生了什么？包括错误消息、日志等
+      render: shell
+    validations:
+      required: true
+
+  - type: input
+    id: python-version
+    attributes:
+      label: Python 版本
+      placeholder: "3.11.5"
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: 操作系统
+      placeholder: "Ubuntu 22.04 / Windows 11 / macOS 14"
+    validations:
+      required: true
+
+  - type: input
+    id: yapi-version
+    attributes:
+      label: YApi 版本
+      placeholder: "1.12.0"
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: 附加信息
+      description: 其他可能有用的信息
+    validations:
+      required: false

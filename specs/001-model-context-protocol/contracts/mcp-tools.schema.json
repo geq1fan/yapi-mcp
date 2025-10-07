@@ -1,0 +1,182 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "YApi MCP Tools Contract",
+  "description": "MCP Tools 定义合约,基于 Model Context Protocol 规范",
+  "definitions": {
+    "SearchInterfacesTool": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "const": "yapi_search_interfaces"
+        },
+        "description": {
+          "const": "在指定 YApi 项目中搜索接口,支持按标题、路径、描述模糊匹配"
+        },
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "projectId": {
+              "type": "number",
+              "description": "YApi 项目 ID",
+              "minimum": 1
+            },
+            "keyword": {
+              "type": "string",
+              "description": "搜索关键词(匹配接口标题/路径/描述)",
+              "minLength": 1,
+              "maxLength": 100
+            }
+          },
+          "required": ["projectId", "keyword"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["name", "description", "inputSchema"]
+    },
+    "GetInterfaceTool": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "const": "yapi_get_interface"
+        },
+        "description": {
+          "const": "获取 YApi 接口的完整定义(包括请求参数、响应结构、描述等)"
+        },
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "interfaceId": {
+              "type": "number",
+              "description": "接口 ID",
+              "minimum": 1
+            }
+          },
+          "required": ["interfaceId"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["name", "description", "inputSchema"]
+    },
+    "CreateInterfaceTool": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "const": "yapi_create_interface"
+        },
+        "description": {
+          "const": "在 YApi 项目中创建新接口定义"
+        },
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "projectId": {
+              "type": "number",
+              "description": "项目 ID",
+              "minimum": 1
+            },
+            "title": {
+              "type": "string",
+              "description": "接口标题",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "path": {
+              "type": "string",
+              "description": "接口路径(必须以 / 开头)",
+              "pattern": "^/"
+            },
+            "method": {
+              "type": "string",
+              "enum": ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"],
+              "description": "HTTP 方法"
+            },
+            "reqBody": {
+              "type": "string",
+              "description": "请求参数定义(JSON 字符串,可选)"
+            },
+            "resBody": {
+              "type": "string",
+              "description": "响应结构定义(JSON 字符串,可选)"
+            },
+            "desc": {
+              "type": "string",
+              "description": "接口描述(可选)"
+            }
+          },
+          "required": ["projectId", "title", "path", "method"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["name", "description", "inputSchema"]
+    },
+    "UpdateInterfaceTool": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "const": "yapi_update_interface"
+        },
+        "description": {
+          "const": "增量更新 YApi 接口定义(仅更新提供的字段)"
+        },
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "interfaceId": {
+              "type": "number",
+              "description": "接口 ID",
+              "minimum": 1
+            },
+            "title": {
+              "type": "string",
+              "description": "更新的标题(可选)",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "path": {
+              "type": "string",
+              "description": "更新的路径(可选)",
+              "pattern": "^/"
+            },
+            "method": {
+              "type": "string",
+              "enum": ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"],
+              "description": "更新的 HTTP 方法(可选)"
+            },
+            "reqBody": {
+              "type": "string",
+              "description": "更新的请求参数(可选)"
+            },
+            "resBody": {
+              "type": "string",
+              "description": "更新的响应结构(可选)"
+            },
+            "desc": {
+              "type": "string",
+              "description": "更新的描述(可选)"
+            }
+          },
+          "required": ["interfaceId"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["name", "description", "inputSchema"]
+    }
+  },
+  "type": "object",
+  "properties": {
+    "tools": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          { "$ref": "#/definitions/SearchInterfacesTool" },
+          { "$ref": "#/definitions/GetInterfaceTool" },
+          { "$ref": "#/definitions/CreateInterfaceTool" },
+          { "$ref": "#/definitions/UpdateInterfaceTool" }
+        ]
+      },
+      "minItems": 4,
+      "maxItems": 4
+    }
+  },
+  "required": ["tools"]
+}

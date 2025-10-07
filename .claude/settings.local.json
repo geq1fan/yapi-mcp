@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__fetch__fetch",
+      "WebFetch(domain:yapi.zuoyebang.cc)",
+      "Bash(powershell:*)",
+      "mcp__context7__resolve-library-id",
+      "WebSearch",
+      "mcp__context7__get-library-docs",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:hellosean1025.github.io)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
