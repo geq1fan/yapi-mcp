@@ -51,3 +51,5 @@ Thumbs.db
 # MCP specific
 fastmcp.json
 *.log
+
+pypi-token.txt
