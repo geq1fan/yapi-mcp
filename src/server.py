@@ -60,8 +60,7 @@ def _ensure_path_starts_with_slash(path: str) -> None:
 
 SEARCH_INTERFACES_ERROR = "搜索接口失败"
 GET_INTERFACE_ERROR = "获取接口失败"
-CREATE_INTERFACE_ERROR = "创建接口失败"
-UPDATE_INTERFACE_ERROR = "更新接口失败"
+SAVE_INTERFACE_ERROR = "保存接口失败"
 
 
 # Initialize MCP server
@@ -129,61 +128,48 @@ async def yapi_get_interface(
 
 
 @mcp.tool()
-async def yapi_create_interface(
-    project_id: Annotated[int, "项目 ID"],
-    title: Annotated[str, "接口标题"],
-    path: Annotated[str, "接口路径(以 / 开头)"],
-    method: Annotated[str, "HTTP 方法(GET/POST/PUT/DELETE等)"],
-    req_body: Annotated[str, "请求参数(JSON 字符串,可选)"] = "",
-    res_body: Annotated[str, "响应结构(JSON 字符串,可选)"] = "",
-    desc: Annotated[str, "接口描述(可选)"] = "",
+async def yapi_save_interface(
+    catid: Annotated[int, "分类 ID (必需)"],
+    project_id: Annotated[int | None, "项目 ID (创建时必需)"] = None,
+    interface_id: Annotated[int | None, "接口 ID (有值=更新,无值=创建)"] = None,
+    title: Annotated[str | None, "接口标题 (创建时必需)"] = None,
+    path: Annotated[str | None, "接口路径 (创建时必需,以/开头)"] = None,
+    method: Annotated[str | None, "HTTP方法 (创建时必需)"] = None,
+    req_body: Annotated[str, "请求参数(JSON字符串)"] = "",
+    res_body: Annotated[str, "响应结构(JSON字符串)"] = "",
+    desc: Annotated[str, "接口描述"] = "",
+    req_body_type: Annotated[str | None, "请求体类型(form/json/raw/file)"] = None,
+    req_body_is_json_schema: Annotated[bool | None, "请求体是否为JSON Schema"] = None,
+    res_body_type: Annotated[str | None, "响应体类型(json/raw)"] = None,
+    res_body_is_json_schema: Annotated[bool | None, "响应体是否为JSON Schema"] = None,
 ) -> str:
-    """在 YApi 项目中创建新接口定义."""
-    config = get_config()
-    try:
-        _ensure_path_starts_with_slash(path)
-
-        async with YApiClient(str(config.yapi_server_url), config.cookies) as client:
-            interface_id = await client.create_interface(
-                project_id, title, path, method, req_body, res_body, desc
-            )
-            return json.dumps(
-                {"interface_id": interface_id},
-                ensure_ascii=False,
-            )
-    except MCPToolError:
-        raise
-    except httpx.HTTPStatusError as exc:
-        raise _http_error_to_tool_error(exc) from exc
-    except ValueError as exc:
-        raise _wrap_validation_error(exc) from exc
-    except Exception as exc:
-        prefix = CREATE_INTERFACE_ERROR
-        raise _wrap_tool_error(prefix, exc) from exc
-
-
-@mcp.tool()
-async def yapi_update_interface(
-    interface_id: Annotated[int, "接口 ID"],
-    title: Annotated[str | None, "更新的标题"] = None,
-    path: Annotated[str | None, "更新的路径"] = None,
-    method: Annotated[str | None, "更新的 HTTP 方法"] = None,
-    req_body: Annotated[str | None, "更新的请求参数"] = None,
-    res_body: Annotated[str | None, "更新的响应结构"] = None,
-    desc: Annotated[str | None, "更新的描述"] = None,
-) -> str:
-    """增量更新 YApi 接口定义(仅更新提供的字段)."""
+    """保存 YApi 接口定义。interface_id 有值则更新,无值则创建新接口。"""
     config = get_config()
     try:
         if path is not None:
             _ensure_path_starts_with_slash(path)
 
         async with YApiClient(str(config.yapi_server_url), config.cookies) as client:
-            success = await client.update_interface(
-                interface_id, title, path, method, req_body, res_body, desc
+            result = await client.save_interface(
+                catid=catid,
+                project_id=project_id,
+                interface_id=interface_id,
+                title=title,
+                path=path,
+                method=method,
+                req_body=req_body,
+                res_body=res_body,
+                desc=desc,
+                req_body_type=req_body_type,
+                req_body_is_json_schema=req_body_is_json_schema,
+                res_body_type=res_body_type,
+                res_body_is_json_schema=res_body_is_json_schema,
             )
+            action = result["action"]
+            iface_id = result["interface_id"]
+            message = "接口创建成功" if action == "created" else "接口更新成功"
             return json.dumps(
-                {"success": success, "message": "接口更新成功"},
+                {"action": action, "interface_id": iface_id, "message": message},
                 ensure_ascii=False,
             )
     except MCPToolError:
@@ -193,7 +179,7 @@ async def yapi_update_interface(
     except ValueError as exc:
         raise _wrap_validation_error(exc) from exc
     except Exception as exc:
-        prefix = UPDATE_INTERFACE_ERROR
+        prefix = SAVE_INTERFACE_ERROR
         raise _wrap_tool_error(prefix, exc) from exc
 
 

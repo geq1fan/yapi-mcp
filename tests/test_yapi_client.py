@@ -11,7 +11,6 @@ BASE_URL = "https://yapi.example.com"
 DEFAULT_TOKEN = "token"  # noqa: S105
 SEARCH_RESULT_COUNT = 2
 DEFAULT_INTERFACE_ID = 123
-RESULT_LIMIT = 50
 CREATED_INTERFACE_ID = 789
 
 
@@ -25,28 +24,32 @@ async def test_search_interfaces_success() -> None:
     """Test successful interface search with mocked YApi API."""
     cookies = make_cookies(DEFAULT_TOKEN)
 
-    # Mock YApi API response
-    respx.post(f"{BASE_URL}/api/interface/list").mock(
+    # Mock YApi API response - 使用 list_menu 接口（树形结构）
+    respx.get(f"{BASE_URL}/api/interface/list_menu").mock(
         return_value=httpx.Response(
             200,
             json={
                 "errcode": 0,
-                "data": {
-                    "list": [
-                        {
-                            "_id": DEFAULT_INTERFACE_ID,
-                            "title": "用户登录",
-                            "path": "/api/login",
-                            "method": "POST",
-                        },
-                        {
-                            "_id": 456,
-                            "title": "用户注册",
-                            "path": "/api/register",
-                            "method": "POST",
-                        },
-                    ]
-                },
+                "data": [
+                    {
+                        "_id": 100,
+                        "name": "用户模块",
+                        "list": [
+                            {
+                                "_id": DEFAULT_INTERFACE_ID,
+                                "title": "用户登录",
+                                "path": "/api/login",
+                                "method": "POST",
+                            },
+                            {
+                                "_id": 456,
+                                "title": "用户注册",
+                                "path": "/api/register",
+                                "method": "POST",
+                            },
+                        ],
+                    }
+                ],
             },
         )
     )
@@ -62,27 +65,36 @@ async def test_search_interfaces_success() -> None:
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_search_interfaces_limit_50() -> None:
-    """Test search results are limited to 50 items."""
+async def test_search_interfaces_returns_all() -> None:
+    """Test search returns all interfaces without limit (using list_menu)."""
     cookies = make_cookies(DEFAULT_TOKEN)
 
-    # Mock response with 100 items
-    mock_interfaces = [
-        {"_id": i, "title": f"接口{i}", "path": f"/api/{i}", "method": "GET"} for i in range(100)
+    # Mock response with 100 items across multiple categories
+    mock_interfaces_cat1 = [
+        {"_id": i, "title": f"接口{i}", "path": f"/api/{i}", "method": "GET"} for i in range(60)
+    ]
+    mock_interfaces_cat2 = [
+        {"_id": i, "title": f"接口{i}", "path": f"/api/{i}", "method": "GET"} for i in range(60, 100)
     ]
 
-    respx.post(f"{BASE_URL}/api/interface/list").mock(
+    respx.get(f"{BASE_URL}/api/interface/list_menu").mock(
         return_value=httpx.Response(
             200,
-            json={"errcode": 0, "data": {"list": mock_interfaces}},
+            json={
+                "errcode": 0,
+                "data": [
+                    {"_id": 1, "name": "分类1", "list": mock_interfaces_cat1},
+                    {"_id": 2, "name": "分类2", "list": mock_interfaces_cat2},
+                ],
+            },
         )
     )
 
     async with YApiClient(BASE_URL, cookies) as client:
         results = await client.search_interfaces(project_id=1, keyword="接口")
 
-    # Should be limited to 50
-    assert len(results) == RESULT_LIMIT
+    # Should return all 100 items (no 50 limit)
+    assert len(results) == 100
 
 
 @pytest.mark.asyncio
@@ -121,8 +133,8 @@ async def test_get_interface_success() -> None:
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_create_interface_success() -> None:
-    """Test successful interface creation."""
+async def test_save_interface_create_success() -> None:
+    """Test successful interface creation via save_interface."""
     cookies = make_cookies(DEFAULT_TOKEN)
 
     respx.post(f"{BASE_URL}/api/interface/add").mock(
@@ -133,20 +145,22 @@ async def test_create_interface_success() -> None:
     )
 
     async with YApiClient(BASE_URL, cookies) as client:
-        interface_id = await client.create_interface(
+        result = await client.save_interface(
+            catid=100,
             project_id=1,
             title="测试接口",
             path="/api/test",
             method="GET",
         )
 
-    assert interface_id == CREATED_INTERFACE_ID
+    assert result["action"] == "created"
+    assert result["interface_id"] == CREATED_INTERFACE_ID
 
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_update_interface_success() -> None:
-    """Test successful interface update."""
+async def test_save_interface_update_success() -> None:
+    """Test successful interface update via save_interface."""
     cookies = make_cookies(DEFAULT_TOKEN)
 
     respx.post(f"{BASE_URL}/api/interface/up").mock(
@@ -157,12 +171,32 @@ async def test_update_interface_success() -> None:
     )
 
     async with YApiClient(BASE_URL, cookies) as client:
-        success = await client.update_interface(
+        result = await client.save_interface(
+            catid=100,
             interface_id=DEFAULT_INTERFACE_ID,
             title="更新的标题",
         )
 
-    assert success is True
+    assert result["action"] == "updated"
+    assert result["interface_id"] == DEFAULT_INTERFACE_ID
+
+
+@pytest.mark.asyncio
+async def test_save_interface_create_missing_params() -> None:
+    """Test save_interface raises ValueError when create params are missing."""
+    cookies = make_cookies(DEFAULT_TOKEN)
+
+    async with YApiClient(BASE_URL, cookies) as client:
+        with pytest.raises(ValueError) as exc_info:
+            await client.save_interface(
+                catid=100,
+                # 缺少 project_id, title, path, method
+            )
+
+    assert "project_id" in str(exc_info.value)
+    assert "title" in str(exc_info.value)
+    assert "path" in str(exc_info.value)
+    assert "method" in str(exc_info.value)
 
 
 @pytest.mark.asyncio
@@ -172,7 +206,7 @@ async def test_yapi_api_error_with_errcode() -> None:
     cookies = make_cookies(DEFAULT_TOKEN)
 
     # YApi returns 200 but with errcode != 0 for business errors
-    respx.post(f"{BASE_URL}/api/interface/list").mock(
+    respx.get(f"{BASE_URL}/api/interface/list_menu").mock(
         return_value=httpx.Response(
             200,
             json={"errcode": 400, "errmsg": "项目不存在"},

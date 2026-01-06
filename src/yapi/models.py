@@ -11,6 +11,7 @@ class YApiInterface(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     id: int = Field(..., alias="_id", description="Interface ID")
+    catid: int = Field(..., description="Category ID this interface belongs to")
     title: str = Field(..., description="Interface title")
     path: str = Field(..., description="Interface path", examples=["/api/user/login"])
 
