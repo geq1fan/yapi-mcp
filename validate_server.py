@@ -9,25 +9,25 @@ def validate_server():
 
     # Check imports
     try:
-        from src.config import ServerConfig
+        from yapi_mcp.config import ServerConfig
         print("✓ ServerConfig import successful")
     except ImportError as e:
         errors.append(f"✗ Failed to import ServerConfig: {e}")
 
     try:
-        from src.yapi.client import YApiClient
+        from yapi_mcp.yapi.client import YApiClient
         print("✓ YApiClient import successful")
     except ImportError as e:
         errors.append(f"✗ Failed to import YApiClient: {e}")
 
     try:
-        from src.yapi.errors import MCPError, map_http_error_to_mcp
+        from yapi_mcp.yapi.errors import MCPError, map_http_error_to_mcp
         print("✓ Error handling imports successful")
     except ImportError as e:
         errors.append(f"✗ Failed to import error handling: {e}")
 
     try:
-        from src.server import mcp
+        from yapi_mcp.server import mcp
         print("✓ MCP server import successful")
     except ImportError as e:
         errors.append(f"✗ Failed to import MCP server: {e}")
@@ -35,13 +35,12 @@ def validate_server():
 
     # Check MCP tools exist in module
     try:
-        from src import server
+        from yapi_mcp import server
 
         expected_tools = [
             "yapi_search_interfaces",
             "yapi_get_interface",
-            "yapi_create_interface",
-            "yapi_update_interface",
+            "yapi_save_interface",
         ]
 
         found_tools = []
@@ -49,8 +48,8 @@ def validate_server():
             if hasattr(server, tool_name):
                 found_tools.append(tool_name)
 
-        if len(found_tools) == 4:
-            print("✓ All 4 expected MCP tools are defined:")
+        if len(found_tools) == len(expected_tools):
+            print(f"✓ All {len(expected_tools)} expected MCP tools are defined:")
             for tool_name in sorted(found_tools):
                 print(f"  - {tool_name}")
         else:
@@ -85,5 +84,5 @@ if __name__ == "__main__":
         print()
         print("Server is ready to run. To start:")
         print("  1. Configure .env with your YApi credentials")
-        print("  2. Run: uvx fastmcp run src/server.py")
+        print("  2. Run: uvx yapi-mcp")
         sys.exit(0)

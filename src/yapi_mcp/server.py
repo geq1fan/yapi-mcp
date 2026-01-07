@@ -7,16 +7,9 @@ from typing import Annotated
 import httpx
 from fastmcp import FastMCP
 
-try:
-    from config import ServerConfig
-    from yapi.client import YApiClient
-    from yapi.errors import map_http_error_to_mcp
-except ModuleNotFoundError as exc:  # pragma: no cover - fallback for package imports
-    if exc.name not in {"config", "yapi", "yapi.client", "yapi.errors"}:
-        raise
-    from .config import ServerConfig
-    from .yapi.client import YApiClient
-    from .yapi.errors import map_http_error_to_mcp
+from yapi_mcp.config import ServerConfig
+from yapi_mcp.yapi.client import YApiClient
+from yapi_mcp.yapi.errors import map_http_error_to_mcp
 
 
 class MCPToolError(RuntimeError):
@@ -130,39 +123,39 @@ async def yapi_get_interface(
 @mcp.tool()
 async def yapi_save_interface(
     catid: Annotated[int, "分类 ID (必需)"],
-    project_id: Annotated[int | None, "项目 ID (创建时必需)"] = None,
-    interface_id: Annotated[int | None, "接口 ID (有值=更新,无值=创建)"] = None,
-    title: Annotated[str | None, "接口标题 (创建时必需)"] = None,
-    path: Annotated[str | None, "接口路径 (创建时必需,以/开头)"] = None,
-    method: Annotated[str | None, "HTTP方法 (创建时必需)"] = None,
+    project_id: Annotated[int, "项目 ID (创建时必需)"] = 0,
+    interface_id: Annotated[int, "接口 ID (有值=更新,无值=创建)"] = 0,
+    title: Annotated[str, "接口标题 (创建时必需)"] = "",
+    path: Annotated[str, "接口路径 (创建时必需,以/开头)"] = "",
+    method: Annotated[str, "HTTP方法 (创建时必需)"] = "",
     req_body: Annotated[str, "请求参数(JSON字符串)"] = "",
     res_body: Annotated[str, "响应结构(JSON字符串)"] = "",
     desc: Annotated[str, "接口描述"] = "",
-    req_body_type: Annotated[str | None, "请求体类型(form/json/raw/file)"] = None,
-    req_body_is_json_schema: Annotated[bool | None, "请求体是否为JSON Schema"] = None,
-    res_body_type: Annotated[str | None, "响应体类型(json/raw)"] = None,
-    res_body_is_json_schema: Annotated[bool | None, "响应体是否为JSON Schema"] = None,
+    req_body_type: Annotated[str, "请求体类型(form/json/raw/file)"] = "",
+    req_body_is_json_schema: Annotated[bool, "请求体是否为JSON Schema"] = True,
+    res_body_type: Annotated[str, "响应体类型(json/raw)"] = "",
+    res_body_is_json_schema: Annotated[bool, "响应体是否为JSON Schema"] = True,
 ) -> str:
     """保存 YApi 接口定义。interface_id 有值则更新,无值则创建新接口。"""
     config = get_config()
     try:
-        if path is not None:
-            _ensure_path_starts_with_slash(path)
+        if path and not path.startswith("/"):
+            raise InvalidInterfacePathError
 
         async with YApiClient(str(config.yapi_server_url), config.cookies) as client:
             result = await client.save_interface(
                 catid=catid,
-                project_id=project_id,
-                interface_id=interface_id,
-                title=title,
-                path=path,
-                method=method,
+                project_id=project_id if project_id else None,
+                interface_id=interface_id if interface_id else None,
+                title=title if title else None,
+                path=path if path else None,
+                method=method if method else None,
                 req_body=req_body,
                 res_body=res_body,
                 desc=desc,
-                req_body_type=req_body_type,
+                req_body_type=req_body_type if req_body_type else None,
                 req_body_is_json_schema=req_body_is_json_schema,
-                res_body_type=res_body_type,
+                res_body_type=res_body_type if res_body_type else None,
                 res_body_is_json_schema=res_body_is_json_schema,
             )
             action = result["action"]

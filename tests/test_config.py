@@ -3,7 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
-from src.config import ServerConfig
+from yapi_mcp.config import ServerConfig
 
 
 def test_server_config_valid() -> None:

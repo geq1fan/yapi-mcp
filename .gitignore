@@ -53,3 +53,4 @@ fastmcp.json
 *.log
 
 pypi-token.txt
+.ace-tool/

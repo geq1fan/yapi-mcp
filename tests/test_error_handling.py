@@ -4,8 +4,8 @@ import httpx
 import pytest
 import respx
 
-from src.yapi.client import YApiClient
-from src.yapi.errors import MCPError, map_http_error_to_mcp
+from yapi_mcp.yapi.client import YApiClient
+from yapi_mcp.yapi.errors import MCPError, map_http_error_to_mcp
 
 BASE_URL = "https://yapi.example.com"
 

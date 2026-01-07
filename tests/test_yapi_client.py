@@ -4,8 +4,8 @@ import httpx
 import pytest
 import respx
 
-from src.yapi.client import YApiClient
-from src.yapi.models import YApiInterface, YApiInterfaceSummary
+from yapi_mcp.yapi.client import YApiClient
+from yapi_mcp.yapi.models import YApiInterface, YApiInterfaceSummary
 
 BASE_URL = "https://yapi.example.com"
 DEFAULT_TOKEN = "token"  # noqa: S105

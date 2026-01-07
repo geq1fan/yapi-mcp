@@ -1,15 +1,32 @@
 [project]
 name = "yapi-mcp"
-version = "0.1.0"
+version = "0.1.2"
 description = "Model Context Protocol server for YApi 1.12.0 API management platform"
 authors = [{ name = "YApi MCP Team" }]
 readme = "README.md"
+license = { text = "MIT" }
 requires-python = ">=3.11"
+keywords = ["mcp", "yapi", "api", "model-context-protocol", "fastmcp"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
 dependencies = [
     "fastmcp>=2.0.0",
     "httpx>=0.27.0",
     "pydantic-settings>=2.0.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/geq1fan/yapi-mcp"
+Repository = "https://github.com/geq1fan/yapi-mcp"
+Issues = "https://github.com/geq1fan/yapi-mcp/issues"
 
 [project.optional-dependencies]
 dev = [
@@ -20,7 +37,7 @@ dev = [
 ]
 
 [project.scripts]
-yapi-mcp = "server:main"
+yapi-mcp = "yapi_mcp:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -46,7 +63,7 @@ quote-style = "double"
 indent-style = "space"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src"]
+packages = ["src/yapi_mcp"]
 
-[tool.hatch.build.targets.wheel.sources]
-src = ""
+[tool.hatch.build.targets.sdist]
+include = ["src/yapi_mcp"]
