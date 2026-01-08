@@ -3,8 +3,25 @@
 from typing import Any, NoReturn
 
 import httpx
+import markdown as md_lib
 
 from .models import YApiErrorResponse, YApiInterface, YApiInterfaceSummary
+
+# Markdown 转 HTML 转换器（单例）
+_md_converter = md_lib.Markdown(extensions=["extra", "codehilite", "nl2br"])
+
+
+def _markdown_to_html(text: str) -> str:
+    """将 Markdown 文本转换为 HTML。
+
+    Args:
+        text: Markdown 格式文本
+
+    Returns:
+        HTML 格式文本
+    """
+    _md_converter.reset()
+    return _md_converter.convert(text)
 
 
 def _raise_yapi_api_error(response: httpx.Response, error: YApiErrorResponse) -> NoReturn:
@@ -108,7 +125,7 @@ class YApiClient:
                 iface["_cat_name"] = cat_name
                 interfaces.append(iface)
 
-        # 客户端关键词过滤（支持分类名搜索）
+        # 客户端关键词过滤（支持分类名搜索，同时匹配 desc 和 markdown）
         if keyword:
             keyword_lower = keyword.lower()
             interfaces = [
@@ -117,6 +134,7 @@ class YApiClient:
                 if keyword_lower in iface.get("title", "").lower()
                 or keyword_lower in iface.get("path", "").lower()
                 or keyword_lower in iface.get("desc", "").lower()
+                or keyword_lower in iface.get("markdown", "").lower()
                 or keyword_lower in iface.get("_cat_name", "").lower()
             ]
 
@@ -150,7 +168,7 @@ class YApiClient:
         method: str | None = None,
         req_body: str = "",
         res_body: str = "",
-        desc: str = "",
+        markdown: str = "",
         req_body_type: str | None = None,
         req_body_is_json_schema: bool | None = None,
         res_body_type: str | None = None,
@@ -170,7 +188,7 @@ class YApiClient:
             method: HTTP method (required for create)
             req_body: Request body definition (JSON string, optional)
             res_body: Response body definition (JSON string, optional)
-            desc: Interface description (optional)
+            markdown: Interface description in Markdown format (optional)
             req_body_type: Request body type (form, json, raw, file)
             req_body_is_json_schema: Whether req_body is JSON Schema format
             res_body_type: Response body type (json, raw)
@@ -219,8 +237,9 @@ class YApiClient:
                 payload["res_body_is_json_schema"] = (
                     res_body_is_json_schema if res_body_is_json_schema is not None else True
                 )
-            if desc:
-                payload["desc"] = desc
+            if markdown:
+                payload["markdown"] = markdown
+                payload["desc"] = _markdown_to_html(markdown)
 
             response = await self.client.post("/interface/add", json=payload)
             self._check_response(response)
@@ -241,8 +260,9 @@ class YApiClient:
             payload["req_body_other"] = req_body
         if res_body:
             payload["res_body"] = res_body
-        if desc is not None:
-            payload["desc"] = desc
+        if markdown is not None:
+            payload["markdown"] = markdown
+            payload["desc"] = _markdown_to_html(markdown) if markdown else ""
         # 类型标记参数独立设置（不依赖内容参数）
         if req_body_type is not None:
             payload["req_body_type"] = req_body_type

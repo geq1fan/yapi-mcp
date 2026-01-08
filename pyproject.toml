@@ -1,6 +1,6 @@
 [project]
 name = "yapi-mcp"
-version = "0.1.2"
+version = "0.1.3"
 description = "Model Context Protocol server for YApi 1.12.0 API management platform"
 authors = [{ name = "YApi MCP Team" }]
 readme = "README.md"
@@ -21,6 +21,7 @@ dependencies = [
     "fastmcp>=2.0.0",
     "httpx>=0.27.0",
     "pydantic-settings>=2.0.0",
+    "markdown>=3.5.0",
 ]
 
 [project.urls]

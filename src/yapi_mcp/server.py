@@ -2,14 +2,19 @@
 
 import json
 from functools import cache
-from typing import Annotated
+from typing import Annotated, Any
 
 import httpx
 from fastmcp import FastMCP
 
 from yapi_mcp.config import ServerConfig
 from yapi_mcp.yapi.client import YApiClient
-from yapi_mcp.yapi.errors import map_http_error_to_mcp
+from yapi_mcp.yapi.errors import (
+    ERROR_TYPE_NETWORK_ERROR,
+    ERROR_TYPE_VALIDATION_FAILED,
+    format_tool_error,
+    map_http_error_to_mcp,
+)
 
 
 class MCPToolError(RuntimeError):
@@ -31,9 +36,39 @@ class InvalidInterfacePathError(ValueError):
         super().__init__("接口路径必须以 / 开头")
 
 
-def _http_error_to_tool_error(error: httpx.HTTPStatusError) -> MCPHTTPError:
+def _http_error_to_tool_error(
+    error: httpx.HTTPStatusError,
+    operation: str,
+    params: dict[str, Any],
+) -> MCPHTTPError:
     mcp_error = map_http_error_to_mcp(error)
-    return MCPHTTPError(mcp_error.message)
+    yapi_error_data = mcp_error.data.get("yapi_error") if mcp_error.data else None
+    error_json = format_tool_error(
+        error_type=mcp_error.error_type,
+        message=mcp_error.message,
+        operation=operation,
+        params=params,
+        error_code=mcp_error.code,
+        retryable=mcp_error.retryable,
+        yapi_error=yapi_error_data if isinstance(yapi_error_data, dict) else None,
+    )
+    return MCPHTTPError(error_json)
+
+
+def _network_error_to_tool_error(
+    error: Exception,
+    operation: str,
+    params: dict[str, Any],
+) -> MCPToolError:
+    error_json = format_tool_error(
+        error_type=ERROR_TYPE_NETWORK_ERROR,
+        message=f"网络错误: {error!s}",
+        operation=operation,
+        params=params,
+        error_code=-32000,
+        retryable=True,
+    )
+    return MCPToolError(error_json)
 
 
 def _wrap_validation_error(error: ValueError) -> MCPValidationError:
@@ -79,10 +114,12 @@ async def yapi_search_interfaces(
 ) -> str:
     """在指定 YApi 项目中搜索接口,支持按标题、路径、描述模糊匹配."""
     config = get_config()
+    operation = "yapi_search_interfaces"
+    params = {"project_id": project_id, "keyword": keyword}
+
     try:
         async with YApiClient(str(config.yapi_server_url), config.cookies) as client:
             results = await client.search_interfaces(project_id, keyword)
-            # Return JSON string with search results
             return json.dumps(
                 [result.model_dump(by_alias=True) for result in results],
                 ensure_ascii=False,
@@ -91,7 +128,9 @@ async def yapi_search_interfaces(
     except MCPToolError:
         raise
     except httpx.HTTPStatusError as exc:
-        raise _http_error_to_tool_error(exc) from exc
+        raise _http_error_to_tool_error(exc, operation, params) from exc
+    except (httpx.TimeoutException, httpx.ConnectError) as exc:
+        raise _network_error_to_tool_error(exc, operation, params) from exc
     except Exception as exc:
         prefix = SEARCH_INTERFACES_ERROR
         raise _wrap_tool_error(prefix, exc) from exc
@@ -103,6 +142,9 @@ async def yapi_get_interface(
 ) -> str:
     """获取 YApi 接口的完整定义(包括请求参数、响应结构、描述等)."""
     config = get_config()
+    operation = "yapi_get_interface"
+    params = {"interface_id": interface_id}
+
     try:
         async with YApiClient(str(config.yapi_server_url), config.cookies) as client:
             interface = await client.get_interface(interface_id)
@@ -114,7 +156,9 @@ async def yapi_get_interface(
     except MCPToolError:
         raise
     except httpx.HTTPStatusError as exc:
-        raise _http_error_to_tool_error(exc) from exc
+        raise _http_error_to_tool_error(exc, operation, params) from exc
+    except (httpx.TimeoutException, httpx.ConnectError) as exc:
+        raise _network_error_to_tool_error(exc, operation, params) from exc
     except Exception as exc:
         prefix = GET_INTERFACE_ERROR
         raise _wrap_tool_error(prefix, exc) from exc
@@ -130,14 +174,24 @@ async def yapi_save_interface(
     method: Annotated[str, "HTTP方法 (创建时必需)"] = "",
     req_body: Annotated[str, "请求参数(JSON字符串)"] = "",
     res_body: Annotated[str, "响应结构(JSON字符串)"] = "",
-    desc: Annotated[str, "接口描述"] = "",
-    req_body_type: Annotated[str, "请求体类型(form/json/raw/file)"] = "",
-    req_body_is_json_schema: Annotated[bool, "请求体是否为JSON Schema"] = True,
-    res_body_type: Annotated[str, "响应体类型(json/raw)"] = "",
-    res_body_is_json_schema: Annotated[bool, "响应体是否为JSON Schema"] = True,
+    markdown: Annotated[str, "接口描述(Markdown格式)"] = "",
+    req_body_type: Annotated[str | None, "请求体类型(form/json/raw/file)"] = None,
+    req_body_is_json_schema: Annotated[bool | None, "请求体是否为JSON Schema"] = None,
+    res_body_type: Annotated[str | None, "响应体类型(json/raw)"] = None,
+    res_body_is_json_schema: Annotated[bool | None, "响应体是否为JSON Schema"] = None,
 ) -> str:
     """保存 YApi 接口定义。interface_id 有值则更新,无值则创建新接口。"""
     config = get_config()
+    operation = "yapi_save_interface"
+    params = {
+        "catid": catid,
+        "project_id": project_id,
+        "interface_id": interface_id,
+        "title": title,
+        "path": path,
+        "method": method,
+    }
+
     try:
         if path and not path.startswith("/"):
             raise InvalidInterfacePathError
@@ -152,8 +206,8 @@ async def yapi_save_interface(
                 method=method if method else None,
                 req_body=req_body,
                 res_body=res_body,
-                desc=desc,
-                req_body_type=req_body_type if req_body_type else None,
+                markdown=markdown,
+                req_body_type=req_body_type,
                 req_body_is_json_schema=req_body_is_json_schema,
                 res_body_type=res_body_type if res_body_type else None,
                 res_body_is_json_schema=res_body_is_json_schema,
@@ -168,7 +222,9 @@ async def yapi_save_interface(
     except MCPToolError:
         raise
     except httpx.HTTPStatusError as exc:
-        raise _http_error_to_tool_error(exc) from exc
+        raise _http_error_to_tool_error(exc, operation, params) from exc
+    except (httpx.TimeoutException, httpx.ConnectError) as exc:
+        raise _network_error_to_tool_error(exc, operation, params) from exc
     except ValueError as exc:
         raise _wrap_validation_error(exc) from exc
     except Exception as exc:
