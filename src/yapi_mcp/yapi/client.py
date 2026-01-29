@@ -1,5 +1,6 @@
 """YApi API HTTP client implementation."""
 
+import json
 from typing import Any, NoReturn
 
 import httpx
@@ -169,6 +170,7 @@ class YApiClient:
         req_body: str = "",
         res_body: str = "",
         markdown: str = "",
+        req_query: str = "",
         req_body_type: str | None = None,
         req_body_is_json_schema: bool | None = None,
         res_body_type: str | None = None,
@@ -240,6 +242,8 @@ class YApiClient:
             if markdown:
                 payload["markdown"] = markdown
                 payload["desc"] = _markdown_to_html(markdown)
+            if req_query:
+                payload["req_query"] = json.loads(req_query)
 
             response = await self.client.post("/interface/add", json=payload)
             self._check_response(response)
@@ -272,6 +276,8 @@ class YApiClient:
             payload["res_body_type"] = res_body_type
         if res_body_is_json_schema is not None:
             payload["res_body_is_json_schema"] = res_body_is_json_schema
+        if req_query:
+            payload["req_query"] = json.loads(req_query)
 
         response = await self.client.post("/interface/up", json=payload)
         self._check_response(response)
