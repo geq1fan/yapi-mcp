@@ -305,3 +305,55 @@ async def test_yapi_api_error_with_errcode() -> None:
             await client.search_interfaces(project_id=99999, keyword="test")
 
     assert "项目不存在" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_check_login_status_success() -> None:
+    """Test successful credential validation via /api/user/status."""
+    cookies = make_cookies(DEFAULT_TOKEN)
+
+    respx.get(f"{BASE_URL}/api/user/status").mock(
+        return_value=httpx.Response(
+            200,
+            json={"errcode": 0, "data": {"username": "testuser", "email": "test@example.com", "role": "member"}},
+        )
+    )
+
+    async with YApiClient(BASE_URL, cookies) as client:
+        user_info = await client.check_login_status()
+
+    assert user_info["username"] == "testuser"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_check_login_status_auth_failure() -> None:
+    """Test credential validation with HTTP 401 raises HTTPStatusError."""
+    cookies = make_cookies("expired_token")
+
+    respx.get(f"{BASE_URL}/api/user/status").mock(
+        return_value=httpx.Response(401)
+    )
+
+    async with YApiClient(BASE_URL, cookies) as client:
+        with pytest.raises(httpx.HTTPStatusError):
+            await client.check_login_status()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_check_login_status_errcode_nonzero() -> None:
+    """Test credential validation with errcode != 0 raises HTTPStatusError."""
+    cookies = make_cookies(DEFAULT_TOKEN)
+
+    respx.get(f"{BASE_URL}/api/user/status").mock(
+        return_value=httpx.Response(
+            200,
+            json={"errcode": 40011, "errmsg": "用户未登录"},
+        )
+    )
+
+    async with YApiClient(BASE_URL, cookies) as client:
+        with pytest.raises(httpx.HTTPStatusError):
+            await client.check_login_status()

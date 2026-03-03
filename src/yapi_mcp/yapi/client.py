@@ -77,6 +77,13 @@ class YApiClient:
         """Close the HTTP client connection."""
         await self.client.aclose()
 
+    async def check_login_status(self) -> dict[str, Any]:
+        """Validate credentials by calling GET /api/user/status."""
+        response = await self.client.get("/user/status")
+        self._check_response(response)
+        data = response.json()
+        return data.get("data", {})
+
     def _check_response(self, response: httpx.Response) -> None:
         """Check YApi API response for errors and raise appropriate exceptions.
 
