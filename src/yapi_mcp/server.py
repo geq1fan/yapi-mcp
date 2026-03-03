@@ -11,7 +11,6 @@ from yapi_mcp.config import ServerConfig
 from yapi_mcp.yapi.client import YApiClient
 from yapi_mcp.yapi.errors import (
     ERROR_TYPE_NETWORK_ERROR,
-    ERROR_TYPE_VALIDATION_FAILED,
     format_tool_error,
     map_http_error_to_mcp,
 )
@@ -88,7 +87,8 @@ def _ensure_path_starts_with_slash(path: str) -> None:
 
 SEARCH_INTERFACES_ERROR = "搜索接口失败"
 GET_INTERFACE_ERROR = "获取接口失败"
-SAVE_INTERFACE_ERROR = "保存接口失败"
+CREATE_INTERFACE_ERROR = "创建接口失败"
+UPDATE_INTERFACE_ERROR = "更新接口失败"
 
 
 # Initialize MCP server
@@ -165,60 +165,77 @@ async def yapi_get_interface(
 
 
 @mcp.tool()
-async def yapi_save_interface(
-    catid: Annotated[int, "分类 ID (必需)"],
-    project_id: Annotated[int, "项目 ID (创建时必需)"] = 0,
-    interface_id: Annotated[int, "接口 ID (有值=更新,无值=创建)"] = 0,
-    title: Annotated[str, "接口标题 (创建时必需)"] = "",
-    path: Annotated[str, "接口路径 (创建时必需,以/开头)"] = "",
-    method: Annotated[str, "HTTP方法 (创建时必需)"] = "",
-    req_body: Annotated[str, "请求参数(JSON字符串)"] = "",
-    res_body: Annotated[str, "响应结构(JSON字符串)"] = "",
-    markdown: Annotated[str, "接口描述(Markdown格式)"] = "",
-    req_query: Annotated[str, "Query参数(JSON数组,每项含name/required/desc)"] = "",
+async def yapi_create_interface(
+    project_id: Annotated[int, "项目 ID"],
+    catid: Annotated[int, "分类 ID"],
+    title: Annotated[str, "接口标题"],
+    path: Annotated[str, "接口路径(以/开头)"],
+    method: Annotated[str, "HTTP方法(GET/POST/PUT/DELETE/PATCH/HEAD/OPTIONS)"],
+    req_body: Annotated[str, "请求体定义(JSON Schema字符串)"] = "",
     req_body_type: Annotated[str | None, "请求体类型(form/json/raw/file)"] = None,
     req_body_is_json_schema: Annotated[bool | None, "请求体是否为JSON Schema"] = None,
+    req_body_form: Annotated[
+        str, '表单字段(JSON数组:[{"name":"x","type":"text","required":"1","desc":"说明"}])'
+    ] = "",
+    res_body: Annotated[str, "响应体定义(JSON Schema字符串)"] = "",
     res_body_type: Annotated[str | None, "响应体类型(json/raw)"] = None,
     res_body_is_json_schema: Annotated[bool | None, "响应体是否为JSON Schema"] = None,
+    req_query: Annotated[
+        str, 'Query参数(JSON数组:[{"name":"page","required":"1","desc":"页码"}])'
+    ] = "",
+    req_headers: Annotated[
+        str, '请求头(JSON数组:[{"name":"Authorization","value":"Bearer token","required":"1"}])'
+    ] = "",
+    req_params: Annotated[
+        str, '路径参数(JSON数组:[{"name":"id","example":"123","desc":"用户ID"}])'
+    ] = "",
+    markdown: Annotated[str, "接口描述(Markdown格式,自动转HTML)"] = "",
+    status: Annotated[str | None, "接口状态(undone/done)"] = None,
+    tag: Annotated[str, '标签(JSON数组:["标签1","标签2"])'] = "",
+    api_opened: Annotated[bool | None, "是否公开API"] = None,
 ) -> str:
-    """保存 YApi 接口定义。interface_id 有值则更新,无值则创建新接口。"""
+    """在 YApi 项目中创建新接口。"""
     config = get_config()
-    operation = "yapi_save_interface"
+    operation = "yapi_create_interface"
     params = {
-        "catid": catid,
         "project_id": project_id,
-        "interface_id": interface_id,
+        "catid": catid,
         "title": title,
         "path": path,
         "method": method,
     }
 
     try:
-        if path and not path.startswith("/"):
-            raise InvalidInterfacePathError
+        _ensure_path_starts_with_slash(path)
 
         async with YApiClient(str(config.yapi_server_url), config.cookies) as client:
-            result = await client.save_interface(
+            result = await client.create_interface(
+                project_id=project_id,
                 catid=catid,
-                project_id=project_id if project_id else None,
-                interface_id=interface_id if interface_id else None,
-                title=title if title else None,
-                path=path if path else None,
-                method=method if method else None,
+                title=title,
+                path=path,
+                method=method,
                 req_body=req_body,
-                res_body=res_body,
-                markdown=markdown,
-                req_query=req_query,
                 req_body_type=req_body_type,
                 req_body_is_json_schema=req_body_is_json_schema,
-                res_body_type=res_body_type if res_body_type else None,
+                req_body_form=req_body_form,
+                res_body=res_body,
+                res_body_type=res_body_type,
                 res_body_is_json_schema=res_body_is_json_schema,
+                req_query=req_query,
+                req_headers=req_headers,
+                req_params=req_params,
+                markdown=markdown,
+                status=status,
+                tag=tag,
+                api_opened=api_opened,
             )
-            action = result["action"]
-            iface_id = result["interface_id"]
-            message = "接口创建成功" if action == "created" else "接口更新成功"
             return json.dumps(
-                {"action": action, "interface_id": iface_id, "message": message},
+                {
+                    "action": result["action"],
+                    "interface_id": result["interface_id"],
+                    "message": "接口创建成功",
+                },
                 ensure_ascii=False,
             )
     except MCPToolError:
@@ -230,7 +247,95 @@ async def yapi_save_interface(
     except ValueError as exc:
         raise _wrap_validation_error(exc) from exc
     except Exception as exc:
-        prefix = SAVE_INTERFACE_ERROR
+        prefix = CREATE_INTERFACE_ERROR
+        raise _wrap_tool_error(prefix, exc) from exc
+
+
+@mcp.tool()
+async def yapi_update_interface(
+    interface_id: Annotated[int, "接口 ID"],
+    catid: Annotated[int | None, "分类 ID(不传则保持原值)"] = None,
+    title: Annotated[str | None, "接口标题"] = None,
+    path: Annotated[str | None, "接口路径(以/开头)"] = None,
+    method: Annotated[str | None, "HTTP方法(GET/POST/PUT/DELETE/PATCH/HEAD/OPTIONS)"] = None,
+    req_body: Annotated[str | None, "请求体定义(JSON Schema字符串)"] = None,
+    req_body_type: Annotated[str | None, "请求体类型(form/json/raw/file)"] = None,
+    req_body_is_json_schema: Annotated[bool | None, "请求体是否为JSON Schema"] = None,
+    req_body_form: Annotated[
+        str | None,
+        '表单字段(JSON数组:[{"name":"x","type":"text","required":"1","desc":"说明"}])',
+    ] = None,
+    res_body: Annotated[str | None, "响应体定义(JSON Schema字符串)"] = None,
+    res_body_type: Annotated[str | None, "响应体类型(json/raw)"] = None,
+    res_body_is_json_schema: Annotated[bool | None, "响应体是否为JSON Schema"] = None,
+    req_query: Annotated[
+        str | None, 'Query参数(JSON数组:[{"name":"page","required":"1","desc":"页码"}])'
+    ] = None,
+    req_headers: Annotated[
+        str | None,
+        '请求头(JSON数组:[{"name":"Authorization","value":"Bearer token","required":"1"}])',
+    ] = None,
+    req_params: Annotated[
+        str | None, '路径参数(JSON数组:[{"name":"id","example":"123","desc":"用户ID"}])'
+    ] = None,
+    markdown: Annotated[str | None, "接口描述(Markdown格式,自动转HTML)"] = None,
+    status: Annotated[str | None, "接口状态(undone/done)"] = None,
+    tag: Annotated[str | None, '标签(JSON数组:["标签1","标签2"])'] = None,
+    api_opened: Annotated[bool | None, "是否公开API"] = None,
+    switch_notice: Annotated[bool | None, "是否通知团队成员"] = None,
+    message: Annotated[str | None, "变更说明"] = None,
+) -> str:
+    """增量更新 YApi 接口定义。自动获取现有数据并合并,仅更新传入的字段。"""
+    config = get_config()
+    operation = "yapi_update_interface"
+    params = {"interface_id": interface_id}
+
+    try:
+        if path is not None:
+            _ensure_path_starts_with_slash(path)
+
+        async with YApiClient(str(config.yapi_server_url), config.cookies) as client:
+            result = await client.update_interface(
+                interface_id=interface_id,
+                catid=catid,
+                title=title,
+                path=path,
+                method=method,
+                req_body=req_body,
+                req_body_type=req_body_type,
+                req_body_is_json_schema=req_body_is_json_schema,
+                req_body_form=req_body_form,
+                res_body=res_body,
+                res_body_type=res_body_type,
+                res_body_is_json_schema=res_body_is_json_schema,
+                req_query=req_query,
+                req_headers=req_headers,
+                req_params=req_params,
+                markdown=markdown,
+                status=status,
+                tag=tag,
+                api_opened=api_opened,
+                switch_notice=switch_notice,
+                message=message,
+            )
+            return json.dumps(
+                {
+                    "action": result["action"],
+                    "interface_id": result["interface_id"],
+                    "message": "接口更新成功",
+                },
+                ensure_ascii=False,
+            )
+    except MCPToolError:
+        raise
+    except httpx.HTTPStatusError as exc:
+        raise _http_error_to_tool_error(exc, operation, params) from exc
+    except (httpx.TimeoutException, httpx.ConnectError) as exc:
+        raise _network_error_to_tool_error(exc, operation, params) from exc
+    except ValueError as exc:
+        raise _wrap_validation_error(exc) from exc
+    except Exception as exc:
+        prefix = UPDATE_INTERFACE_ERROR
         raise _wrap_tool_error(prefix, exc) from exc
 
 

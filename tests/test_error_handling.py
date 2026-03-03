@@ -35,7 +35,7 @@ async def test_authentication_failure_401() -> None:
     """Test 401 Unauthorized error handling."""
     cookies = make_cookies("invalid")
 
-    respx.post(f"{BASE_URL}/api/interface/list").mock(
+    respx.get(f"{BASE_URL}/api/interface/list_menu").mock(
         return_value=httpx.Response(
             HTTP_UNAUTHORIZED,
             json={"errcode": HTTP_UNAUTHORIZED, "errmsg": "未登录"},
@@ -92,7 +92,9 @@ async def test_permission_denied_403() -> None:
 
     async with YApiClient(BASE_URL, cookies) as client:
         with pytest.raises(httpx.HTTPStatusError) as exc_info:
-            await client.create_interface(project_id=1, title="Test", path="/test", method="GET")
+            await client.create_interface(
+                project_id=1, catid=100, title="Test", path="/test", method="GET"
+            )
 
     # Map to MCP error
     mcp_error = map_http_error_to_mcp(exc_info.value)
@@ -106,7 +108,7 @@ async def test_server_error_500() -> None:
     """Test 500 Internal Server Error handling."""
     cookies = make_cookies(DEFAULT_TOKEN)
 
-    respx.post(f"{BASE_URL}/api/interface/list").mock(
+    respx.get(f"{BASE_URL}/api/interface/list_menu").mock(
         return_value=httpx.Response(
             HTTP_SERVER_ERROR,
             json={"errcode": HTTP_SERVER_ERROR, "errmsg": "服务器内部错误"},
@@ -139,7 +141,9 @@ async def test_bad_request_400() -> None:
 
     async with YApiClient(BASE_URL, cookies) as client:
         with pytest.raises(httpx.HTTPStatusError) as exc_info:
-            await client.create_interface(project_id=1, title="", path="/test", method="GET")
+            await client.create_interface(
+                project_id=1, catid=100, title="", path="/test", method="GET"
+            )
 
     # Map to MCP error
     mcp_error = map_http_error_to_mcp(exc_info.value)

@@ -1,5 +1,7 @@
 """Integration tests for YApiClient with mocked HTTP responses."""
 
+import json
+
 import httpx
 import pytest
 import respx
@@ -114,6 +116,7 @@ async def test_get_interface_success() -> None:
                     "path": "/api/login",
                     "method": "POST",
                     "project_id": 1,
+                    "catid": 100,
                     "desc": "用户登录接口",
                     "req_body_other": '{"username": "string", "password": "string"}',
                     "res_body": '{"token": "string"}',
@@ -133,8 +136,8 @@ async def test_get_interface_success() -> None:
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_save_interface_create_success() -> None:
-    """Test successful interface creation via save_interface."""
+async def test_create_interface_success() -> None:
+    """Test successful interface creation via create_interface."""
     cookies = make_cookies(DEFAULT_TOKEN)
 
     respx.post(f"{BASE_URL}/api/interface/add").mock(
@@ -145,9 +148,9 @@ async def test_save_interface_create_success() -> None:
     )
 
     async with YApiClient(BASE_URL, cookies) as client:
-        result = await client.save_interface(
-            catid=100,
+        result = await client.create_interface(
             project_id=1,
+            catid=100,
             title="测试接口",
             path="/api/test",
             method="GET",
@@ -159,9 +162,65 @@ async def test_save_interface_create_success() -> None:
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_save_interface_update_success() -> None:
-    """Test successful interface update via save_interface."""
+async def test_create_interface_with_new_params() -> None:
+    """Test create_interface with req_headers, req_params, status, tag."""
     cookies = make_cookies(DEFAULT_TOKEN)
+
+    add_route = respx.post(f"{BASE_URL}/api/interface/add").mock(
+        return_value=httpx.Response(
+            200,
+            json={"errcode": 0, "data": {"_id": CREATED_INTERFACE_ID}},
+        )
+    )
+
+    async with YApiClient(BASE_URL, cookies) as client:
+        await client.create_interface(
+            project_id=1,
+            catid=100,
+            title="带完整参数的接口",
+            path="/api/users/:id",
+            method="POST",
+            req_headers='[{"name":"Authorization","value":"Bearer token","required":"1"}]',
+            req_params='[{"name":"id","example":"123","desc":"用户ID"}]',
+            req_query='[{"name":"page","required":"0","desc":"页码"}]',
+            status="undone",
+            tag='["v2","auth"]',
+        )
+
+    # Verify payload sent to YApi
+    sent_payload = json.loads(add_route.calls[0].request.content)
+    assert sent_payload["req_headers"] == [
+        {"name": "Authorization", "value": "Bearer token", "required": "1"}
+    ]
+    assert sent_payload["req_params"] == [{"name": "id", "example": "123", "desc": "用户ID"}]
+    assert sent_payload["req_query"] == [{"name": "page", "required": "0", "desc": "页码"}]
+    assert sent_payload["status"] == "undone"
+    assert sent_payload["tag"] == ["v2", "auth"]
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_update_interface_success() -> None:
+    """Test successful interface update via update_interface."""
+    cookies = make_cookies(DEFAULT_TOKEN)
+
+    # Mock GET for read-before-write
+    respx.get(f"{BASE_URL}/api/interface/get").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "errcode": 0,
+                "data": {
+                    "_id": DEFAULT_INTERFACE_ID,
+                    "title": "原始标题",
+                    "path": "/api/old",
+                    "method": "GET",
+                    "project_id": 1,
+                    "catid": 100,
+                },
+            },
+        )
+    )
 
     respx.post(f"{BASE_URL}/api/interface/up").mock(
         return_value=httpx.Response(
@@ -171,8 +230,7 @@ async def test_save_interface_update_success() -> None:
     )
 
     async with YApiClient(BASE_URL, cookies) as client:
-        result = await client.save_interface(
-            catid=100,
+        result = await client.update_interface(
             interface_id=DEFAULT_INTERFACE_ID,
             title="更新的标题",
         )
@@ -181,22 +239,51 @@ async def test_save_interface_update_success() -> None:
     assert result["interface_id"] == DEFAULT_INTERFACE_ID
 
 
+EXISTING_CATID = 200
+
+
 @pytest.mark.asyncio
-async def test_save_interface_create_missing_params() -> None:
-    """Test save_interface raises ValueError when create params are missing."""
+@respx.mock
+async def test_update_interface_auto_catid() -> None:
+    """Test update_interface auto-fetches catid from existing interface."""
     cookies = make_cookies(DEFAULT_TOKEN)
 
-    async with YApiClient(BASE_URL, cookies) as client:
-        with pytest.raises(ValueError) as exc_info:
-            await client.save_interface(
-                catid=100,
-                # 缺少 project_id, title, path, method
-            )
+    # Mock GET - existing interface with catid=200
+    respx.get(f"{BASE_URL}/api/interface/get").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "errcode": 0,
+                "data": {
+                    "_id": DEFAULT_INTERFACE_ID,
+                    "title": "原始标题",
+                    "path": "/api/test",
+                    "method": "GET",
+                    "project_id": 1,
+                    "catid": EXISTING_CATID,
+                },
+            },
+        )
+    )
 
-    assert "project_id" in str(exc_info.value)
-    assert "title" in str(exc_info.value)
-    assert "path" in str(exc_info.value)
-    assert "method" in str(exc_info.value)
+    up_route = respx.post(f"{BASE_URL}/api/interface/up").mock(
+        return_value=httpx.Response(
+            200,
+            json={"errcode": 0, "data": {}},
+        )
+    )
+
+    async with YApiClient(BASE_URL, cookies) as client:
+        await client.update_interface(
+            interface_id=DEFAULT_INTERFACE_ID,
+            title="新标题",
+            # catid not provided - should use existing value 200
+        )
+
+    # Verify catid was auto-filled from existing data
+    sent_payload = json.loads(up_route.calls[0].request.content)
+    assert sent_payload["catid"] == EXISTING_CATID
+    assert sent_payload["title"] == "新标题"
 
 
 @pytest.mark.asyncio

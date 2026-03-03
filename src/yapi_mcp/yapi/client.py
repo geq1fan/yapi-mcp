@@ -25,6 +25,18 @@ def _markdown_to_html(text: str) -> str:
     return _md_converter.convert(text)
 
 
+def _set_if_not_none(payload: dict[str, Any], key: str, value: Any) -> None:  # noqa: ANN401
+    """Set payload key if value is not None."""
+    if value is not None:
+        payload[key] = value
+
+
+def _set_json_if_not_none(payload: dict[str, Any], key: str, value: str | None) -> None:
+    """Set payload key from JSON string if value is not None."""
+    if value is not None:
+        payload[key] = json.loads(value)
+
+
 def _raise_yapi_api_error(response: httpx.Response, error: YApiErrorResponse) -> NoReturn:
     message = f"YApi API error: {error.errmsg} (code: {error.errcode})"
     raise httpx.HTTPStatusError(
@@ -159,125 +171,197 @@ class YApiClient:
         data = response.json()
         return YApiInterface(**data["data"])
 
-    async def save_interface(
+    async def create_interface(
         self,
+        project_id: int,
         catid: int,
-        project_id: int | None = None,
-        interface_id: int | None = None,
+        title: str,
+        path: str,
+        method: str,
+        *,
+        req_body: str = "",
+        req_body_type: str | None = None,
+        req_body_is_json_schema: bool | None = None,
+        req_body_form: str = "",
+        res_body: str = "",
+        res_body_type: str | None = None,
+        res_body_is_json_schema: bool | None = None,
+        req_query: str = "",
+        req_headers: str = "",
+        req_params: str = "",
+        markdown: str = "",
+        status: str | None = None,
+        tag: str = "",
+        api_opened: bool | None = None,
+    ) -> dict[str, Any]:
+        """Create a new interface.
+
+        Args:
+            project_id: Project ID
+            catid: Category ID
+            title: Interface title
+            path: Interface path (must start with /)
+            method: HTTP method
+            req_body: Request body (JSON Schema string)
+            req_body_type: Request body type (form/json/raw/file)
+            req_body_is_json_schema: Whether req_body is JSON Schema
+            req_body_form: Form fields (JSON array: [{name, type, required, desc, example}])
+            res_body: Response body (JSON Schema string)
+            res_body_type: Response body type (json/raw)
+            res_body_is_json_schema: Whether res_body is JSON Schema
+            req_query: Query params (JSON array: [{name, required, desc, example}])
+            req_headers: Request headers (JSON array: [{name, value, required, desc}])
+            req_params: Path params (JSON array: [{name, example, desc}])
+            markdown: Description in Markdown (auto-converted to HTML for desc)
+            status: Interface status (undone/done)
+            tag: Tags (JSON array: ["tag1", "tag2"])
+            api_opened: Whether API is publicly accessible
+
+        Returns:
+            dict with keys: action ("created"), interface_id (int)
+        """
+        payload: dict[str, Any] = {
+            "project_id": project_id,
+            "catid": catid,
+            "title": title,
+            "path": path,
+            "method": method.upper(),
+        }
+
+        if req_body:
+            payload["req_body_other"] = req_body
+            payload["req_body_type"] = req_body_type or "json"
+            payload["req_body_is_json_schema"] = (
+                req_body_is_json_schema if req_body_is_json_schema is not None else True
+            )
+        if req_body_form:
+            payload["req_body_form"] = json.loads(req_body_form)
+            if not req_body_type:
+                payload["req_body_type"] = "form"
+        if res_body:
+            payload["res_body"] = res_body
+            payload["res_body_type"] = res_body_type or "json"
+            payload["res_body_is_json_schema"] = (
+                res_body_is_json_schema if res_body_is_json_schema is not None else True
+            )
+        if req_query:
+            payload["req_query"] = json.loads(req_query)
+        if req_headers:
+            payload["req_headers"] = json.loads(req_headers)
+        if req_params:
+            payload["req_params"] = json.loads(req_params)
+        if markdown:
+            payload["markdown"] = markdown
+            payload["desc"] = _markdown_to_html(markdown)
+        if status is not None:
+            payload["status"] = status
+        if tag:
+            payload["tag"] = json.loads(tag)
+        if api_opened is not None:
+            payload["api_opened"] = api_opened
+
+        response = await self.client.post("/interface/add", json=payload)
+        self._check_response(response)
+
+        data = response.json()
+        return {"action": "created", "interface_id": int(data["data"]["_id"])}
+
+    async def update_interface(
+        self,
+        interface_id: int,
+        *,
+        catid: int | None = None,
         title: str | None = None,
         path: str | None = None,
         method: str | None = None,
-        req_body: str = "",
-        res_body: str = "",
-        markdown: str = "",
-        req_query: str = "",
+        req_body: str | None = None,
         req_body_type: str | None = None,
         req_body_is_json_schema: bool | None = None,
+        req_body_form: str | None = None,
+        res_body: str | None = None,
         res_body_type: str | None = None,
         res_body_is_json_schema: bool | None = None,
+        req_query: str | None = None,
+        req_headers: str | None = None,
+        req_params: str | None = None,
+        markdown: str | None = None,
+        status: str | None = None,
+        tag: str | None = None,
+        api_opened: bool | None = None,
+        switch_notice: bool | None = None,
+        message: str | None = None,
     ) -> dict[str, Any]:
-        """Save interface definition (create or update).
+        """Update an existing interface (read-before-write).
 
-        If interface_id is provided, update the existing interface.
-        If interface_id is not provided, create a new interface.
+        Automatically fetches existing data and merges user-provided fields.
+        Only fields explicitly passed will be updated; others keep their current values.
 
         Args:
-            catid: Category ID (required for both create and update)
-            project_id: Project ID (required for create)
-            interface_id: Interface ID (if provided, update; otherwise create)
-            title: Interface title (required for create)
-            path: Interface path, must start with / (required for create)
-            method: HTTP method (required for create)
-            req_body: Request body definition (JSON string, optional)
-            res_body: Response body definition (JSON string, optional)
-            markdown: Interface description in Markdown format (optional)
-            req_body_type: Request body type (form, json, raw, file)
-            req_body_is_json_schema: Whether req_body is JSON Schema format
-            res_body_type: Response body type (json, raw)
-            res_body_is_json_schema: Whether res_body is JSON Schema format
+            interface_id: Interface ID to update
+            catid: Category ID (auto-fetched if not provided)
+            title: Interface title
+            path: Interface path (must start with /)
+            method: HTTP method
+            req_body: Request body (JSON Schema string)
+            req_body_type: Request body type (form/json/raw/file)
+            req_body_is_json_schema: Whether req_body is JSON Schema
+            req_body_form: Form fields (JSON array: [{name, type, required, desc, example}])
+            res_body: Response body (JSON Schema string)
+            res_body_type: Response body type (json/raw)
+            res_body_is_json_schema: Whether res_body is JSON Schema
+            req_query: Query params (JSON array: [{name, required, desc, example}])
+            req_headers: Request headers (JSON array: [{name, value, required, desc}])
+            req_params: Path params (JSON array: [{name, example, desc}])
+            markdown: Description in Markdown (auto-converted to HTML for desc)
+            status: Interface status (undone/done)
+            tag: Tags (JSON array: ["tag1", "tag2"])
+            api_opened: Whether API is publicly accessible
+            switch_notice: Whether to notify team members
+            message: Change description
 
         Returns:
-            dict with keys: action ("created" or "updated"), interface_id (int)
-
-        Raises:
-            ValueError: When required parameters are missing for create mode
-            httpx.HTTPStatusError: For validation, permission, or server errors
+            dict with keys: action ("updated"), interface_id (int)
         """
-        if interface_id is None:
-            # 创建模式：校验必填参数
-            missing = []
-            if project_id is None:
-                missing.append("project_id")
-            if title is None:
-                missing.append("title")
-            if path is None:
-                missing.append("path")
-            if method is None:
-                missing.append("method")
-            if missing:
-                msg = f"创建接口需要以下参数: {', '.join(missing)}"
-                raise ValueError(msg)
+        # 先读后写：获取现有接口数据
+        existing = await self.get_interface(interface_id)
 
-            # 调用创建 API
-            payload: dict[str, Any] = {
-                "project_id": project_id,
-                "catid": catid,
-                "title": title,
-                "path": path,
-                "method": method.upper(),  # type: ignore[union-attr]
-            }
+        payload: dict[str, Any] = {
+            "id": interface_id,
+            "catid": catid if catid is not None else existing.catid,
+        }
 
-            if req_body:
-                payload["req_body_other"] = req_body
-                payload["req_body_type"] = req_body_type if req_body_type else "json"
-                payload["req_body_is_json_schema"] = (
-                    req_body_is_json_schema if req_body_is_json_schema is not None else True
-                )
-            if res_body:
-                payload["res_body"] = res_body
-                payload["res_body_type"] = res_body_type if res_body_type else "json"
-                payload["res_body_is_json_schema"] = (
-                    res_body_is_json_schema if res_body_is_json_schema is not None else True
-                )
-            if markdown:
-                payload["markdown"] = markdown
-                payload["desc"] = _markdown_to_html(markdown)
-            if req_query:
-                payload["req_query"] = json.loads(req_query)
-
-            response = await self.client.post("/interface/add", json=payload)
-            self._check_response(response)
-
-            data = response.json()
-            return {"action": "created", "interface_id": int(data["data"]["_id"])}
-
-        # 更新模式
-        payload = {"id": interface_id, "catid": catid}
-
-        if title is not None:
-            payload["title"] = title
-        if path is not None:
-            payload["path"] = path
+        _set_if_not_none(payload, "title", title)
+        _set_if_not_none(payload, "path", path)
         if method is not None:
             payload["method"] = method.upper()
-        if req_body:
-            payload["req_body_other"] = req_body
-        if res_body:
-            payload["res_body"] = res_body
+
+        # 请求体参数
+        _set_if_not_none(payload, "req_body_other", req_body)
+        _set_if_not_none(payload, "req_body_type", req_body_type)
+        _set_if_not_none(payload, "req_body_is_json_schema", req_body_is_json_schema)
+        _set_json_if_not_none(payload, "req_body_form", req_body_form)
+
+        # 响应体参数
+        _set_if_not_none(payload, "res_body", res_body)
+        _set_if_not_none(payload, "res_body_type", res_body_type)
+        _set_if_not_none(payload, "res_body_is_json_schema", res_body_is_json_schema)
+
+        # 数组参数
+        _set_json_if_not_none(payload, "req_query", req_query)
+        _set_json_if_not_none(payload, "req_headers", req_headers)
+        _set_json_if_not_none(payload, "req_params", req_params)
+
+        # 元数据参数
         if markdown is not None:
             payload["markdown"] = markdown
             payload["desc"] = _markdown_to_html(markdown) if markdown else ""
-        # 类型标记参数独立设置（不依赖内容参数）
-        if req_body_type is not None:
-            payload["req_body_type"] = req_body_type
-        if req_body_is_json_schema is not None:
-            payload["req_body_is_json_schema"] = req_body_is_json_schema
-        if res_body_type is not None:
-            payload["res_body_type"] = res_body_type
-        if res_body_is_json_schema is not None:
-            payload["res_body_is_json_schema"] = res_body_is_json_schema
-        if req_query:
-            payload["req_query"] = json.loads(req_query)
+        _set_if_not_none(payload, "status", status)
+        _set_json_if_not_none(payload, "tag", tag)
+        _set_if_not_none(payload, "api_opened", api_opened)
+
+        # 更新专有参数
+        _set_if_not_none(payload, "switch_notice", switch_notice)
+        _set_if_not_none(payload, "message", message)
 
         response = await self.client.post("/interface/up", json=payload)
         self._check_response(response)
