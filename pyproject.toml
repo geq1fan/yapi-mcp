@@ -1,6 +1,6 @@
 [project]
 name = "yapi-mcp"
-version = "0.1.5"
+version = "0.1.6"
 description = "Model Context Protocol server for YApi 1.12.0 API management platform"
 authors = [{ name = "YApi MCP Team" }]
 readme = "README.md"

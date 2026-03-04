@@ -88,6 +88,125 @@ def _ensure_path_starts_with_slash(path: str) -> None:
         raise InvalidInterfacePathError
 
 
+_VALID_METHODS = {"GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"}
+_VALID_REQ_BODY_TYPES = {"form", "json", "raw", "file"}
+_VALID_RES_BODY_TYPES = {"json", "raw"}
+_VALID_STATUSES = {"undone", "done"}
+
+_JSON_ARRAY_FIELD_EXAMPLES = {
+    "req_body_form": '[{"name":"field1","type":"text","required":1,"desc":"字段说明"}]',
+    "req_query": '[{"name":"page","required":0,"desc":"页码","example":"1"}]',
+    "req_headers": '[{"name":"Authorization","value":"Bearer token","required":1}]',
+    "req_params": '[{"name":"id","example":"123","desc":"用户ID"}]',
+    "tag": '["标签1","标签2"]',
+}
+
+
+def _validate_interface_request(
+    *,
+    method: str | None = None,
+    req_body_type: str | None = None,
+    req_body: str | None = None,
+    req_body_form: str | None = None,
+    res_body_type: str | None = None,
+    status: str | None = None,
+    req_query: str | None = None,
+    req_headers: str | None = None,
+    req_params: str | None = None,
+    tag: str | None = None,
+) -> None:
+    """Validate cross-field constraints for interface create/update requests.
+
+    Treats both None and "" as "not provided" to unify create (default "")
+    and update (default None) tool signatures.
+    """
+
+    def _provided(v: str | None) -> bool:
+        return bool(v)
+
+    # 1. Enum value validation
+    if method is not None and method not in _VALID_METHODS:
+        raise ValueError(
+            f'method "{method}" 无效。'
+            f"支持的 HTTP 方法为：{'、'.join(sorted(_VALID_METHODS))}。"
+        )
+
+    if req_body_type is not None and req_body_type not in _VALID_REQ_BODY_TYPES:
+        raise ValueError(
+            f'req_body_type "{req_body_type}" 无效。'
+            "支持的值为：form（表单）、json（JSON 格式）、raw（原始文本）、file（文件上传）。"
+        )
+
+    if res_body_type is not None and res_body_type not in _VALID_RES_BODY_TYPES:
+        raise ValueError(
+            f'res_body_type "{res_body_type}" 无效。支持的值为：json、raw。'
+        )
+
+    if status is not None and status not in _VALID_STATUSES:
+        raise ValueError(
+            f'status "{status}" 无效。支持的值为：undone（未完成）、done（已完成）。'
+        )
+
+    has_req_body = _provided(req_body)
+    has_req_body_form = _provided(req_body_form)
+
+    # 2. Mutual exclusion: req_body and req_body_form cannot both be provided
+    if has_req_body and has_req_body_form:
+        raise ValueError(
+            "req_body 和 req_body_form 不能同时提供："
+            "req_body 用于 json/raw 类型的请求体（字符串格式），"
+            "req_body_form 用于 form 类型的请求体（JSON 数组格式）。"
+            "请根据 req_body_type 选择其中一个。"
+        )
+
+    # 3. Body type correlation
+    if req_body_type == "form" and has_req_body:
+        raise ValueError(
+            'req_body_type 为 "form" 时，请求体字段应通过 req_body_form 以 JSON 数组格式定义'
+            '（如 [{"name":"field1","type":"text","required":1,"desc":""}]），'
+            "而非 req_body。req_body 仅用于 json/raw 类型。"
+            "请清空 req_body，将字段定义移至 req_body_form。"
+        )
+
+    if req_body_type in ("json", "raw") and has_req_body_form:
+        raise ValueError(
+            f'req_body_type 为 "{req_body_type}" 时，请求体应通过 req_body 提供（字符串格式），'
+            "而非 req_body_form。req_body_form 仅用于 form 类型。"
+            "请清空 req_body_form，将内容移至 req_body。"
+        )
+
+    if req_body_type == "file" and (has_req_body or has_req_body_form):
+        raise ValueError(
+            'req_body_type 为 "file" 时，不需要提供 req_body 或 req_body_form，'
+            "文件上传接口的字段通过 YApi 界面配置。请清空这两个字段。"
+        )
+
+    # 4. JSON array format pre-validation
+    json_array_fields: dict[str, str | None] = {
+        "req_body_form": req_body_form,
+        "req_query": req_query,
+        "req_headers": req_headers,
+        "req_params": req_params,
+        "tag": tag,
+    }
+    for field_name, field_value in json_array_fields.items():
+        if not _provided(field_value):
+            continue
+        example = _JSON_ARRAY_FIELD_EXAMPLES[field_name]
+        try:
+            parsed = json.loads(field_value)  # type: ignore[arg-type]
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                f"{field_name} 必须是合法的 JSON 数组格式（如 {example}），"
+                f"当前值无法解析为 JSON：{exc.msg}。"
+            ) from exc
+        if not isinstance(parsed, list):
+            raise ValueError(
+                f"{field_name} 必须是 JSON 数组格式（以 [ 开头，以 ] 结尾），"
+                f"如：{example}。当前值解析后不是数组类型。"
+            )
+
+
 SEARCH_INTERFACES_ERROR = "搜索接口失败"
 GET_INTERFACE_ERROR = "获取接口失败"
 CREATE_INTERFACE_ERROR = "创建接口失败"
@@ -233,6 +352,18 @@ async def yapi_create_interface(
 
     try:
         _ensure_path_starts_with_slash(path)
+        _validate_interface_request(
+            method=method,
+            req_body_type=req_body_type,
+            req_body=req_body,
+            req_body_form=req_body_form,
+            res_body_type=res_body_type,
+            status=status,
+            req_query=req_query,
+            req_headers=req_headers,
+            req_params=req_params,
+            tag=tag,
+        )
 
         async with YApiClient(str(config.yapi_server_url), config.cookies) as client:
             result = await client.create_interface(
@@ -319,6 +450,18 @@ async def yapi_update_interface(
     try:
         if path is not None:
             _ensure_path_starts_with_slash(path)
+        _validate_interface_request(
+            method=method,
+            req_body_type=req_body_type,
+            req_body=req_body,
+            req_body_form=req_body_form,
+            res_body_type=res_body_type,
+            status=status,
+            req_query=req_query,
+            req_headers=req_headers,
+            req_params=req_params,
+            tag=tag,
+        )
 
         async with YApiClient(str(config.yapi_server_url), config.cookies) as client:
             result = await client.update_interface(
