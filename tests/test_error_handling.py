@@ -4,6 +4,7 @@ import httpx
 import pytest
 import respx
 
+from conftest import make_cookies
 from yapi_mcp.yapi.client import YApiClient
 from yapi_mcp.yapi.errors import MCPError, map_http_error_to_mcp
 
@@ -23,10 +24,6 @@ MCP_CODE_INVALID_PARAMS = -32602
 
 
 DEFAULT_TOKEN = "token"  # noqa: S105
-
-
-def make_cookies(token: str) -> dict[str, str]:
-    return {"_yapi_token": token, "_yapi_uid": "uid", "ZYBIPSCAS": "cas"}
 
 
 @pytest.mark.asyncio

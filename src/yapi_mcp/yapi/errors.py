@@ -193,7 +193,7 @@ def map_http_error_to_mcp(error: httpx.HTTPStatusError) -> MCPError:
         if isinstance(raw_error, Mapping):
             yapi_error = dict(raw_error)
             error_data["yapi_error"] = yapi_error
-    except Exception:
+    except (json.JSONDecodeError, UnicodeDecodeError, AttributeError):
         error_data["response_text"] = error.response.text[:200]
 
     if status_code == HTTP_STATUS_OK and yapi_error and yapi_error.get("errcode", 0) != 0:

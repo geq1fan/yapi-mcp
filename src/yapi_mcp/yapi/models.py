@@ -72,13 +72,3 @@ class YApiErrorResponse(BaseModel):
 
     errcode: int = Field(..., description="Error code (non-zero indicates error)")
     errmsg: str = Field(..., description="Error message")
-
-
-class YApiProject(BaseModel):
-    """YApi project information (optional, for future use)."""
-
-    model_config = ConfigDict(populate_by_name=True)
-
-    id: int = Field(..., alias="_id", description="Project ID")
-    name: str = Field(..., description="Project name")
-    desc: str | None = Field(None, description="Project description")

@@ -14,6 +14,8 @@ from yapi_mcp.config import ServerConfig
 from yapi_mcp.yapi.client import YApiClient
 from yapi_mcp.yapi.errors import (
     ERROR_TYPE_NETWORK_ERROR,
+    ERROR_TYPE_VALIDATION_FAILED,
+    MCP_CODE_INVALID_PARAMS,
     format_tool_error,
     map_http_error_to_mcp,
 )
@@ -73,9 +75,20 @@ def _network_error_to_tool_error(
     return MCPToolError(error_json)
 
 
-def _wrap_validation_error(error: ValueError) -> MCPValidationError:
-    message = f"参数验证失败: {error!s}"
-    return MCPValidationError(message)
+def _wrap_validation_error(
+    error: ValueError,
+    operation: str,
+    params: dict[str, Any],
+) -> MCPValidationError:
+    error_json = format_tool_error(
+        error_type=ERROR_TYPE_VALIDATION_FAILED,
+        message=f"参数验证失败: {error!s}",
+        operation=operation,
+        params=params,
+        error_code=MCP_CODE_INVALID_PARAMS,
+        retryable=False,
+    )
+    return MCPValidationError(error_json)
 
 
 def _wrap_tool_error(prefix: str, error: Exception) -> MCPToolError:
@@ -249,8 +262,6 @@ def get_config() -> ServerConfig:
     return ServerConfig()
 
 
-# Tool implementations will be added in subsequent tasks (T019-T022)
-
 
 @mcp.tool()
 async def yapi_search_interfaces(
@@ -402,7 +413,7 @@ async def yapi_create_interface(
     except (httpx.TimeoutException, httpx.ConnectError) as exc:
         raise _network_error_to_tool_error(exc, operation, params) from exc
     except ValueError as exc:
-        raise _wrap_validation_error(exc) from exc
+        raise _wrap_validation_error(exc, operation, params) from exc
     except Exception as exc:
         prefix = CREATE_INTERFACE_ERROR
         raise _wrap_tool_error(prefix, exc) from exc
@@ -502,7 +513,7 @@ async def yapi_update_interface(
     except (httpx.TimeoutException, httpx.ConnectError) as exc:
         raise _network_error_to_tool_error(exc, operation, params) from exc
     except ValueError as exc:
-        raise _wrap_validation_error(exc) from exc
+        raise _wrap_validation_error(exc, operation, params) from exc
     except Exception as exc:
         prefix = UPDATE_INTERFACE_ERROR
         raise _wrap_tool_error(prefix, exc) from exc

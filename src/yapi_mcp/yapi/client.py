@@ -104,7 +104,7 @@ class YApiClient:
                 # YApi returns errcode != 0 for business logic errors
                 # Treat these as HTTP-equivalent errors
                 _raise_yapi_api_error(response, error)
-        except (ValueError, KeyError):
+        except (json.JSONDecodeError, KeyError, TypeError):
             # Not a JSON response or doesn't have errcode - proceed normally
             pass
 
