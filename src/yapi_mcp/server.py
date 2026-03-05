@@ -9,6 +9,7 @@ from typing import Annotated, Any
 
 import httpx
 from fastmcp import FastMCP
+from pydantic import ValidationError
 
 from yapi_mcp.config import ServerConfig
 from yapi_mcp.yapi.client import YApiClient
@@ -228,18 +229,27 @@ UPDATE_INTERFACE_ERROR = "更新接口失败"
 
 @asynccontextmanager
 async def app_lifespan(server: FastMCP) -> AsyncIterator[dict[str, Any]]:
-    config = get_config()
     try:
+        config = get_config()
         async with YApiClient(str(config.yapi_server_url), config.cookies) as client:
             user_info = await client.check_login_status()
             username = user_info.get("username", "unknown")
             print(f"[yapi-mcp] Credentials validated: logged in as {username}", file=sys.stderr)
+    except ValidationError as exc:
+        missing = [e["loc"][0] for e in exc.errors() if e["type"] == "missing"]
+        if missing:
+            for field in missing:
+                print(f"[yapi-mcp] ERROR: Required configuration missing: {str(field).upper()}", file=sys.stderr)
+        else:
+            print(f"[yapi-mcp] ERROR: Configuration error: {exc}", file=sys.stderr)
+        print("[yapi-mcp] Set required environment variables: YAPI_SERVER_URL, YAPI_TOKEN, YAPI_UID", file=sys.stderr)
+        sys.exit(1)
     except httpx.HTTPStatusError:
         print("[yapi-mcp] ERROR: Credential validation failed. Cookie may be expired.", file=sys.stderr)
         print("[yapi-mcp] Check YAPI_TOKEN and YAPI_UID environment variables.", file=sys.stderr)
         sys.exit(1)
     except (httpx.TimeoutException, httpx.ConnectError) as exc:
-        print(f"[yapi-mcp] ERROR: Cannot connect to YApi at {config.yapi_server_url}: {exc}", file=sys.stderr)
+        print(f"[yapi-mcp] ERROR: Cannot connect to YApi: {exc}", file=sys.stderr)
         print("[yapi-mcp] Check YAPI_SERVER_URL environment variable.", file=sys.stderr)
         sys.exit(1)
     except Exception as exc:
@@ -521,7 +531,13 @@ async def yapi_update_interface(
 
 def main() -> None:
     """Entry point for uvx yapi-mcp command."""
-    mcp.run()
+    try:
+        mcp.run()
+    except SystemExit:
+        raise
+    except Exception as exc:
+        print(f"[yapi-mcp] ERROR: {exc}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
