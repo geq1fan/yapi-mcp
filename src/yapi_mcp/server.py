@@ -14,6 +14,7 @@ from pydantic import ValidationError
 from yapi_mcp.config import ServerConfig
 from yapi_mcp.yapi.client import YApiClient
 from yapi_mcp.yapi.errors import (
+    ERROR_TYPE_AUTH_FAILED,
     ERROR_TYPE_NETWORK_ERROR,
     ERROR_TYPE_VALIDATION_FAILED,
     MCP_CODE_INVALID_PARAMS,
@@ -32,6 +33,10 @@ class MCPHTTPError(MCPToolError):
 
 class MCPValidationError(MCPToolError):
     """Exception raised when tool input validation fails."""
+
+
+class MCPStartupError(RuntimeError):
+    """Exception raised when server startup validation fails."""
 
 
 class InvalidInterfacePathError(ValueError):
@@ -227,6 +232,39 @@ CREATE_INTERFACE_ERROR = "创建接口失败"
 UPDATE_INTERFACE_ERROR = "更新接口失败"
 
 
+def _print_startup_http_error(error: httpx.HTTPStatusError, *, has_cas_cookie: bool) -> None:
+    """Print a precise startup validation error for HTTP failures."""
+    mcp_error = map_http_error_to_mcp(error)
+    print(
+        f"[yapi-mcp] ERROR: Startup validation request to /api/user/status failed: {mcp_error.message}",
+        file=sys.stderr,
+    )
+
+    if mcp_error.error_type == ERROR_TYPE_AUTH_FAILED:
+        print(
+            "[yapi-mcp] Check YAPI_TOKEN, YAPI_UID, and optional YAPI_CAS environment variables.",
+            file=sys.stderr,
+        )
+        return
+
+    if error.response.status_code == httpx.codes.NOT_FOUND:
+        print(
+            "[yapi-mcp] Check YAPI_SERVER_URL. It can be either the YApi site URL or the /api URL.",
+            file=sys.stderr,
+        )
+    else:
+        print(
+            f"[yapi-mcp] HTTP {error.response.status_code} returned from /api/user/status.",
+            file=sys.stderr,
+        )
+
+    if not has_cas_cookie:
+        print(
+            "[yapi-mcp] If your deployment uses SSO/CAS, also set YAPI_CAS.",
+            file=sys.stderr,
+        )
+
+
 @asynccontextmanager
 async def app_lifespan(server: FastMCP) -> AsyncIterator[dict[str, Any]]:
     try:
@@ -243,18 +281,17 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[dict[str, Any]]:
         else:
             print(f"[yapi-mcp] ERROR: Configuration error: {exc}", file=sys.stderr)
         print("[yapi-mcp] Set required environment variables: YAPI_SERVER_URL, YAPI_TOKEN, YAPI_UID", file=sys.stderr)
-        sys.exit(1)
-    except httpx.HTTPStatusError:
-        print("[yapi-mcp] ERROR: Credential validation failed. Cookie may be expired.", file=sys.stderr)
-        print("[yapi-mcp] Check YAPI_TOKEN and YAPI_UID environment variables.", file=sys.stderr)
-        sys.exit(1)
+        raise MCPStartupError from None
+    except httpx.HTTPStatusError as exc:
+        _print_startup_http_error(exc, has_cas_cookie=bool(config.yapi_cas))
+        raise MCPStartupError from None
     except (httpx.TimeoutException, httpx.ConnectError) as exc:
         print(f"[yapi-mcp] ERROR: Cannot connect to YApi: {exc}", file=sys.stderr)
         print("[yapi-mcp] Check YAPI_SERVER_URL environment variable.", file=sys.stderr)
-        sys.exit(1)
+        raise MCPStartupError from None
     except Exception as exc:
         print(f"[yapi-mcp] ERROR: Unexpected error during startup validation: {exc}", file=sys.stderr)
-        sys.exit(1)
+        raise MCPStartupError from None
     yield {}
 
 
@@ -531,8 +568,16 @@ async def yapi_update_interface(
 
 def main() -> None:
     """Entry point for uvx yapi-mcp command."""
+    startup_failed = False
+
     try:
-        mcp.run()
+        try:
+            mcp.run()
+        except* MCPStartupError:
+            startup_failed = True
+
+        if startup_failed:
+            sys.exit(1)
     except SystemExit:
         raise
     except Exception as exc:

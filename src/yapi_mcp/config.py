@@ -11,6 +11,7 @@ class ServerConfig(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
+        extra="ignore",
     )
 
     yapi_server_url: HttpUrl = Field(
