@@ -11,7 +11,12 @@ import httpx
 from fastmcp import FastMCP
 from pydantic import ValidationError
 
-from yapi_mcp.config import ServerConfig
+from yapi_mcp.config import (
+    ENV_FILE_ENV_VAR,
+    EnvFileConfigurationError,
+    ServerConfig,
+    load_server_config,
+)
 from yapi_mcp.yapi.client import YApiClient
 from yapi_mcp.yapi.errors import (
     ERROR_TYPE_AUTH_FAILED,
@@ -273,6 +278,13 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[dict[str, Any]]:
             user_info = await client.check_login_status()
             username = user_info.get("username", "unknown")
             print(f"[yapi-mcp] Credentials validated: logged in as {username}", file=sys.stderr)
+    except EnvFileConfigurationError as exc:
+        print(f"[yapi-mcp] ERROR: {exc}", file=sys.stderr)
+        print(
+            f"[yapi-mcp] Set {ENV_FILE_ENV_VAR} to a valid .env path or unset it to disable .env loading.",
+            file=sys.stderr,
+        )
+        raise MCPStartupError from None
     except ValidationError as exc:
         missing = [e["loc"][0] for e in exc.errors() if e["type"] == "missing"]
         if missing:
@@ -280,7 +292,14 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[dict[str, Any]]:
                 print(f"[yapi-mcp] ERROR: Required configuration missing: {str(field).upper()}", file=sys.stderr)
         else:
             print(f"[yapi-mcp] ERROR: Configuration error: {exc}", file=sys.stderr)
-        print("[yapi-mcp] Set required environment variables: YAPI_SERVER_URL, YAPI_TOKEN, YAPI_UID", file=sys.stderr)
+        print(
+            "[yapi-mcp] Set required environment variables: YAPI_SERVER_URL, YAPI_TOKEN, YAPI_UID",
+            file=sys.stderr,
+        )
+        print(
+            f"[yapi-mcp] To load them from a file, set {ENV_FILE_ENV_VAR} to that .env path.",
+            file=sys.stderr,
+        )
         raise MCPStartupError from None
     except httpx.HTTPStatusError as exc:
         _print_startup_http_error(exc, has_cas_cookie=bool(config.yapi_cas))
@@ -306,7 +325,7 @@ mcp = FastMCP(
 @cache
 def get_config() -> ServerConfig:
     """Get or create ServerConfig instance (cached)."""
-    return ServerConfig()
+    return load_server_config()
 
 
 

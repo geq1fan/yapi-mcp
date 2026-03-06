@@ -1,5 +1,7 @@
 """Tests for startup credential validation error reporting."""
 
+from pathlib import Path
+
 import httpx
 import pytest
 
@@ -50,7 +52,8 @@ def test_main_exits_cleanly_on_startup_validation_failure(
     """Test startup validation failures exit with code 1 without extra traceback logging."""
 
     def raise_startup_error() -> None:
-        raise ExceptionGroup("startup", [server.MCPStartupError()])
+        exception_group_message = "startup"
+        raise ExceptionGroup(exception_group_message, [server.MCPStartupError()])
 
     monkeypatch.setattr(server.mcp, "run", raise_startup_error)
 
@@ -59,3 +62,24 @@ def test_main_exits_cleanly_on_startup_validation_failure(
 
     captured = capsys.readouterr()
     assert captured.err == ""
+
+
+@pytest.mark.asyncio
+async def test_app_lifespan_reports_invalid_env_file(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Test invalid YAPI_ENV_FILE paths get a dedicated startup error."""
+
+    def raise_invalid_env_file() -> None:
+        raise server.EnvFileConfigurationError(Path("missing.env"))
+
+    monkeypatch.setattr(server, "get_config", raise_invalid_env_file)
+
+    with pytest.raises(server.MCPStartupError):
+        async with server.app_lifespan(server.mcp):
+            pass
+
+    captured = capsys.readouterr()
+    assert "YAPI_ENV_FILE" in captured.err
+    assert "disable .env loading" in captured.err

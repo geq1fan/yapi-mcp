@@ -5,13 +5,19 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from yapi_mcp.config import ServerConfig
+from yapi_mcp.config import (
+    ENV_FILE_ENV_VAR,
+    EnvFileConfigurationError,
+    ServerConfig,
+    load_server_config,
+    resolve_env_file_path,
+)
 
 
 @pytest.fixture(autouse=True)
 def clear_yapi_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """Prevent local shell or CI environment from affecting config tests."""
-    for key in ("YAPI_SERVER_URL", "YAPI_TOKEN", "YAPI_UID", "YAPI_CAS"):
+    for key in ("YAPI_SERVER_URL", "YAPI_TOKEN", "YAPI_UID", "YAPI_CAS", ENV_FILE_ENV_VAR):
         monkeypatch.delenv(key, raising=False)
 
 
@@ -140,31 +146,76 @@ def test_server_config_cookies_without_cas() -> None:
     assert "ZYBIPSCAS" not in cookies
 
 
-def test_server_config_ignores_unrelated_dotenv_keys(
+def test_server_config_does_not_read_cwd_dotenv_by_default(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Test unrelated keys in the current working directory .env file are ignored."""
+    """Test current working directory .env is not loaded implicitly."""
     dotenv_path = tmp_path / ".env"
     dotenv_path.write_text(
-        "\n".join(
-            [
-                "YAPI_SERVER_URL=https://yapi.example.com",
-                "YAPI_TOKEN=dummy-token",
-                "YAPI_UID=dummy-uid",
-                "PYPI_TOKEN=ignored-value",
-            ]
+        (
+            "YAPI_SERVER_URL=https://yapi.example.com\n"
+            "YAPI_TOKEN=dummy-token\n"
+            "YAPI_UID=dummy-uid\n"
+            "PYPI_TOKEN=ignored-value"
         ),
         encoding="utf-8",
     )
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.delenv("YAPI_SERVER_URL", raising=False)
-    monkeypatch.delenv("YAPI_TOKEN", raising=False)
-    monkeypatch.delenv("YAPI_UID", raising=False)
-    monkeypatch.delenv("YAPI_CAS", raising=False)
 
-    config = ServerConfig()
+    with pytest.raises(ValidationError) as exc_info:
+        ServerConfig()
+
+    missing_fields = {error["loc"][0] for error in exc_info.value.errors()}
+    assert {"yapi_server_url", "yapi_token", "yapi_uid"}.issubset(missing_fields)
+
+
+@pytest.mark.parametrize("env_file_value", ["", "   "])
+def test_resolve_env_file_path_ignores_blank_values(
+    env_file_value: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Test blank YAPI_ENV_FILE values disable .env loading."""
+    monkeypatch.setenv(ENV_FILE_ENV_VAR, env_file_value)
+
+    assert resolve_env_file_path() is None
+
+
+def test_resolve_env_file_path_raises_for_missing_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Test invalid YAPI_ENV_FILE paths fail with a clear error."""
+    missing_path = tmp_path / "missing.env"
+    monkeypatch.setenv(ENV_FILE_ENV_VAR, str(missing_path))
+
+    with pytest.raises(EnvFileConfigurationError, match=str(missing_path)):
+        resolve_env_file_path()
+
+
+def test_load_server_config_from_explicit_env_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Test explicit YAPI_ENV_FILE path is loaded, including relative paths."""
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    dotenv_path = config_dir / "yapi.env"
+    dotenv_path.write_text(
+        (
+            "YAPI_SERVER_URL=https://yapi.example.com\n"
+            "YAPI_TOKEN=dummy-token\n"
+            "YAPI_UID=dummy-uid\n"
+            "PYPI_TOKEN=ignored-value"
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv(ENV_FILE_ENV_VAR, "config/yapi.env")
+
+    config = load_server_config()
 
     assert str(config.yapi_server_url) == "https://yapi.example.com/"
     assert config.yapi_token == "dummy-token"  # noqa: S105

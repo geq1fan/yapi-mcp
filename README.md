@@ -126,6 +126,8 @@
 
 ### 2. 配置 MCP
 
+推荐直接在 MCP 配置的 `env` 中传入所需环境变量:
+
 ```json
 {
   "mcpServers": {
@@ -143,6 +145,26 @@
 ```
 
 > **注意**: 如果你的 YApi 部署需要额外的 CAS 认证，添加 `"YAPI_CAS": "your_cas_value"` 到 `env` 中。
+
+如果你希望从文件加载配置，可以先参考 `.env.example` 创建一个专用 `.env` 文件，然后显式设置 `YAPI_ENV_FILE`:
+
+```json
+{
+  "mcpServers": {
+    "yapi": {
+      "command": "uvx",
+      "args": ["yapi-mcp"],
+      "env": {
+        "YAPI_ENV_FILE": "/absolute/path/to/yapi.env"
+      }
+    }
+  }
+}
+```
+
+- 未配置 `YAPI_ENV_FILE` 时，程序不会自动读取当前目录下的 `.env`。
+- `.env.example` 只是模板文件，不会被自动加载。
+- `YAPI_ENV_FILE` 必须由外部环境传入；不要把它写在目标 `.env` 文件里指望自举生效。
 
 ## 开发
 
